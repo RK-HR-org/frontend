@@ -1,7 +1,10 @@
 <script lang="ts" setup>
-import { useAuth } from "../composables/useAuth";
+import { computed } from "vue";
+import { useAuthStore } from "../stores/auth";
 
-const { isAuthenticated, logout } = useAuth();
+const auth = useAuthStore();
+const isAuthenticated = computed(() => auth.isAuthenticated);
+const logout = () => auth.logout();
 </script>
 
 <template>
@@ -10,6 +13,7 @@ const { isAuthenticated, logout } = useAuth();
       <div class="header-links">
         <router-link to="/">Home</router-link>
         <router-link v-if="isAuthenticated" to="/users">Users</router-link>
+        <router-link v-if="isAuthenticated" to="/teams">Команды</router-link>
         <router-link to="/account">Account</router-link>
       </div>
       <div class="header-auth">
@@ -26,6 +30,7 @@ const { isAuthenticated, logout } = useAuth();
       <div class="footer-links">
         <router-link to="/">Home</router-link>
         <router-link v-if="isAuthenticated" to="/users">Users</router-link>
+        <router-link v-if="isAuthenticated" to="/teams">Команды</router-link>
         <router-link to="/account">Account</router-link>
       </div>
     </div>

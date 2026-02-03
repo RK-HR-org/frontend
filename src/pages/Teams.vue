@@ -1,92 +1,47 @@
 <script setup>
-import { onMounted, ref, reactive, computed } from "vue";
+import { onMounted, ref, reactive } from "vue";
 import { useUsers } from "../composables/useUsers";
 import TextInputField from "../components/ui/fields/text/TextInputField.vue";
-import DropdownField from "../components/ui/fields/select/DropdownField.vue";
 
 const {
-  usersList,
   teams,
   error,
-  loadingUsers,
-  fetchUsers,
+  loading,
   fetchTeams,
-  createUser,
-  updateUser,
-  deleteUser,
+  createTeam,
+  updateTeam,
+  deleteTeam,
 } = useUsers();
 
 onMounted(() => {
-  fetchUsers();
   fetchTeams();
 });
 
 const showCreateModal = ref(false);
 const showEditModal = ref(false);
 const showDeleteModal = ref(false);
-const selectedUser = ref(null);
+const selectedTeam = ref(null);
 
-const formCreate = reactive({
-  email: "",
-  password: "",
-  role: "user",
-  status: "active",
-  telegram_id: "",
-  team_id: "",
-});
-const formEdit = reactive({
-  email: "",
-  role: "user",
-  status: "active",
-  telegram_id: "",
-  team_id: "",
-});
+const formCreate = reactive({ name: "" });
+const formEdit = reactive({ name: "" });
 const formError = ref("");
 const formSubmitting = ref(false);
 
-const roleOptions = [
-  { value: "user", label: "Пользователь" },
-  { value: "admin", label: "Администратор" },
-  { value: "manager", label: "Менеджер" },
-];
-const statusOptions = [
-  { value: "active", label: "Активен" },
-  { value: "inactive", label: "Неактивен" },
-  { value: "blocked", label: "Заблокирован" },
-];
-
-const teamOptions = computed(() => {
-  const list = teams.value ?? [];
-  if (!list.length) return [];
-  return list.map((t) => ({ value: String(t.id), label: t.name || String(t.id) }));
-});
-
 function openCreate() {
-  const list = teams.value ?? [];
-  formCreate.email = "";
-  formCreate.password = "";
-  formCreate.role = "user";
-  formCreate.status = "active";
-  formCreate.telegram_id = "";
-  formCreate.team_id = list[0] ? String(list[0].id) : "";
-  formError.value = list.length ? "" : "Нет доступных команд. Создайте команду в разделе Команды.";
+  formCreate.name = "";
+  formError.value = "";
   showCreateModal.value = true;
 }
 
-function openEdit(user) {
-  const list = teams.value ?? [];
-  selectedUser.value = user;
-  formEdit.email = user.email ?? "";
-  formEdit.role = user.role ?? "user";
-  formEdit.status = user.status ?? "active";
-  formEdit.telegram_id = user.telegram_id ?? "";
-  formEdit.team_id = user.team_id ? String(user.team_id) : (list[0] ? String(list[0].id) : "");
+function openEdit(team) {
+  selectedTeam.value = team;
+  formEdit.name = team.name ?? "";
   formError.value = "";
   showEditModal.value = true;
 }
 
-function openDelete(user) {
-  selectedUser.value = user;
+function openDelete(team) {
+  selectedTeam.value = team;
   formError.value = "";
   showDeleteModal.value = true;
 }
@@ -95,38 +50,27 @@ function closeModals() {
   showCreateModal.value = false;
   showEditModal.value = false;
   showDeleteModal.value = false;
-  selectedUser.value = null;
+  selectedTeam.value = null;
   formError.value = "";
+}
+
+function parseApiError(err) {
+  const msg = err?.response?.data?.detail ?? err?.response?.data?.message ?? err?.message ?? "Ошибка.";
+  return typeof msg === "string" ? msg : JSON.stringify(msg);
 }
 
 async function submitCreate() {
   formError.value = "";
-  if (!formCreate.email?.trim()) {
-    formError.value = "Введите email.";
-    return;
-  }
-  if (!formCreate.password || formCreate.password.length < 8) {
-    formError.value = "Пароль должен быть не менее 8 символов.";
-    return;
-  }
-  if (!formCreate.team_id?.trim()) {
-    formError.value = "Выберите команду.";
+  if (!formCreate.name?.trim()) {
+    formError.value = "Введите название команды.";
     return;
   }
   try {
     formSubmitting.value = true;
-    await createUser({
-      email: formCreate.email.trim(),
-      password: formCreate.password,
-      role: formCreate.role,
-      status: formCreate.status,
-      telegram_id: formCreate.telegram_id?.trim() || null,
-      team_id: formCreate.team_id.trim(),
-    });
+    await createTeam({ name: formCreate.name.trim() });
     closeModals();
   } catch (err) {
-    const msg = err?.response?.data?.detail ?? err?.response?.data?.message ?? err?.message ?? "Ошибка создания.";
-    formError.value = typeof msg === "string" ? msg : JSON.stringify(msg);
+    formError.value = parseApiError(err);
   } finally {
     formSubmitting.value = false;
   }
@@ -134,29 +78,17 @@ async function submitCreate() {
 
 async function submitEdit() {
   formError.value = "";
-  if (!selectedUser.value?.id) return;
-  if (!formEdit.email?.trim()) {
-    formError.value = "Введите email.";
+  if (!selectedTeam.value?.id) return;
+  if (!formEdit.name?.trim()) {
+    formError.value = "Введите название команды.";
     return;
   }
   try {
     formSubmitting.value = true;
-    const editTeamId = formEdit.team_id?.trim();
-    if (!editTeamId) {
-      formError.value = "Выберите команду.";
-      return;
-    }
-    await updateUser(selectedUser.value.id, {
-      email: formEdit.email.trim(),
-      role: formEdit.role,
-      status: formEdit.status,
-      telegram_id: formEdit.telegram_id?.trim() || null,
-      team_id: editTeamId,
-    });
+    await updateTeam(selectedTeam.value.id, { name: formEdit.name.trim() });
     closeModals();
   } catch (err) {
-    const msg = err?.response?.data?.detail ?? err?.response?.data?.message ?? err?.message ?? "Ошибка обновления.";
-    formError.value = typeof msg === "string" ? msg : JSON.stringify(msg);
+    formError.value = parseApiError(err);
   } finally {
     formSubmitting.value = false;
   }
@@ -164,14 +96,13 @@ async function submitEdit() {
 
 async function submitDelete() {
   formError.value = "";
-  if (!selectedUser.value?.id) return;
+  if (!selectedTeam.value?.id) return;
   try {
     formSubmitting.value = true;
-    await deleteUser(selectedUser.value.id);
+    await deleteTeam(selectedTeam.value.id);
     closeModals();
   } catch (err) {
-    const msg = err?.response?.data?.detail ?? err?.response?.data?.message ?? err?.message ?? "Ошибка удаления.";
-    formError.value = typeof msg === "string" ? msg : JSON.stringify(msg);
+    formError.value = parseApiError(err);
   } finally {
     formSubmitting.value = false;
   }
@@ -179,11 +110,11 @@ async function submitDelete() {
 </script>
 
 <template>
-  <div class="users-page">
+  <div class="teams-page">
     <header class="page-header">
-      <h1>Пользователи</h1>
+      <h1>Команды</h1>
       <button type="button" class="btn btn-primary" @click="openCreate">
-        Добавить пользователя
+        Добавить команду
       </button>
     </header>
 
@@ -191,38 +122,34 @@ async function submitDelete() {
       <p>{{ error?.response?.data?.detail ?? error?.response?.data?.message ?? error?.message ?? error }}</p>
     </div>
 
-    <div v-if="loadingUsers" class="loading">
-      <p>Загрузка списка пользователей...</p>
+    <div v-if="loading" class="loading">
+      <p>Загрузка списка команд...</p>
     </div>
 
-    <div v-else-if="!usersList?.length" class="no-data">
-      <p>Нет пользователей. Добавьте первого.</p>
+    <div v-else-if="!teams?.length" class="no-data">
+      <p>Нет команд. Добавьте первую.</p>
     </div>
 
     <div v-else class="table-wrap">
-      <table class="users-table">
+      <table class="teams-table">
         <thead>
           <tr>
-            <th>Email</th>
-            <th>Роль</th>
-            <th>Статус</th>
-            <th>Telegram ID</th>
-            <th>Создан</th>
+            <th>Название</th>
+            <th>ID</th>
+            <th>Дата создания</th>
             <th>Действия</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="user in usersList" :key="user.id">
-            <td>{{ user.email }}</td>
-            <td>{{ user.role }}</td>
-            <td>{{ user.status }}</td>
-            <td>{{ user.telegram_id ?? "—" }}</td>
-            <td>{{ user.created_at }}</td>
+          <tr v-for="team in teams" :key="team.id">
+            <td>{{ team.name }}</td>
+            <td class="team-id">{{ team.id }}</td>
+            <td>{{ team.created_at }}</td>
             <td class="actions">
-              <button type="button" class="btn btn-sm btn-edit" @click="openEdit(user)">
+              <button type="button" class="btn btn-sm btn-edit" @click="openEdit(team)">
                 Изменить
               </button>
-              <button type="button" class="btn btn-sm btn-delete" @click="openDelete(user)">
+              <button type="button" class="btn btn-sm btn-delete" @click="openDelete(team)">
                 Удалить
               </button>
             </td>
@@ -234,48 +161,20 @@ async function submitDelete() {
     <!-- Модальное окно: создание -->
     <div v-if="showCreateModal" class="modal-overlay" @click.self="closeModals">
       <div class="modal">
-        <h2>Новый пользователь</h2>
+        <h2>Новая команда</h2>
         <form @submit.prevent="submitCreate" class="modal-form">
           <TextInputField
-            v-model="formCreate.email"
-            label="Email"
-            type="email"
+            v-model="formCreate.name"
+            label="Название"
             required
-          />
-          <TextInputField
-            v-model="formCreate.password"
-            label="Пароль"
-            type="password"
-            required
-            hint="Минимум 8 символов"
-          />
-          <DropdownField
-            v-model="formCreate.role"
-            label="Роль"
-            :options="roleOptions"
-          />
-          <DropdownField
-            v-model="formCreate.status"
-            label="Статус"
-            :options="statusOptions"
-          />
-          <DropdownField
-            v-model="formCreate.team_id"
-            label="Команда"
-            :options="teamOptions"
-            placeholder="Выберите команду"
-            required
-          />
-          <TextInputField
-            v-model="formCreate.telegram_id"
-            label="Telegram ID"
+            placeholder="Введите название команды"
           />
           <p v-if="formError" class="form-error">{{ formError }}</p>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="closeModals">
               Отмена
             </button>
-            <button type="submit" class="btn btn-primary" :disabled="formSubmitting || !teamOptions.length">
+            <button type="submit" class="btn btn-primary" :disabled="formSubmitting">
               {{ formSubmitting ? "Сохранение…" : "Создать" }}
             </button>
           </div>
@@ -286,33 +185,13 @@ async function submitDelete() {
     <!-- Модальное окно: редактирование -->
     <div v-if="showEditModal" class="modal-overlay" @click.self="closeModals">
       <div class="modal">
-        <h2>Редактировать пользователя</h2>
+        <h2>Редактировать команду</h2>
         <form @submit.prevent="submitEdit" class="modal-form">
           <TextInputField
-            v-model="formEdit.email"
-            label="Email"
-            type="email"
+            v-model="formEdit.name"
+            label="Название"
             required
-          />
-          <DropdownField
-            v-model="formEdit.role"
-            label="Роль"
-            :options="roleOptions"
-          />
-          <DropdownField
-            v-model="formEdit.status"
-            label="Статус"
-            :options="statusOptions"
-          />
-          <DropdownField
-            v-model="formEdit.team_id"
-            label="Команда"
-            :options="teamOptions"
-            placeholder="Выберите команду"
-          />
-          <TextInputField
-            v-model="formEdit.telegram_id"
-            label="Telegram ID"
+            placeholder="Введите название команды"
           />
           <p v-if="formError" class="form-error">{{ formError }}</p>
           <div class="modal-actions">
@@ -330,9 +209,9 @@ async function submitDelete() {
     <!-- Модальное окно: удаление -->
     <div v-if="showDeleteModal" class="modal-overlay" @click.self="closeModals">
       <div class="modal modal-sm">
-        <h2>Удалить пользователя?</h2>
-        <p v-if="selectedUser" class="delete-target">
-          {{ selectedUser.email }} ({{ selectedUser.id }})
+        <h2>Удалить команду?</h2>
+        <p v-if="selectedTeam" class="delete-target">
+          {{ selectedTeam.name }} ({{ selectedTeam.id }})
         </p>
         <p v-if="formError" class="form-error">{{ formError }}</p>
         <div class="modal-actions">
@@ -349,7 +228,7 @@ async function submitDelete() {
 </template>
 
 <style scoped>
-.users-page {
+.teams-page {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
@@ -396,12 +275,12 @@ async function submitDelete() {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.users-table {
+.teams-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.users-table th {
+.teams-table th {
   padding: 12px 16px;
   text-align: left;
   font-weight: 600;
@@ -409,13 +288,18 @@ async function submitDelete() {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.users-table td {
+.teams-table td {
   padding: 12px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.users-table tbody tr:hover {
+.teams-table tbody tr:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.team-id {
+  font-family: monospace;
+  font-size: 0.9em;
 }
 
 .actions {
@@ -482,7 +366,6 @@ async function submitDelete() {
   font-size: 0.85rem;
 }
 
-/* Модальные окна */
 .modal-overlay {
   position: fixed;
   inset: 0;
