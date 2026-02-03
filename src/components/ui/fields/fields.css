@@ -1,0 +1,82 @@
+/* Общие переменные и стили для полей ввода */
+
+.field-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.field-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: inherit;
+  opacity: 0.9;
+}
+
+.field-label.required::after {
+  content: ' *';
+  color: #e74c3c;
+}
+
+.field-error {
+  font-size: 0.8rem;
+  color: #e74c3c;
+  margin-top: -0.15rem;
+}
+
+.field-hint {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+/* Базовые стили для input, textarea, select */
+.field-input-base {
+  width: 100%;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.field-input-base::placeholder {
+  opacity: 0.5;
+}
+
+.field-input-base:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.field-input-base:focus {
+  outline: none;
+  border-color: #646cff;
+  box-shadow: 0 0 0 3px rgba(100, 108, 255, 0.2);
+}
+
+.field-input-base:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.field-input-base.has-error {
+  border-color: #e74c3c;
+}
+
+.field-input-base.has-error:focus {
+  box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.2);
+}
+
+@media (prefers-color-scheme: light) {
+  .field-input-base {
+    border-color: rgba(0, 0, 0, 0.15);
+    background-color: #fff;
+  }
+  .field-input-base:hover:not(:disabled) {
+    border-color: rgba(0, 0, 0, 0.25);
+  }
+}

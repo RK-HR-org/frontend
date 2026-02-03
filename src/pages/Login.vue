@@ -1,15 +1,25 @@
 <script lang="ts" setup>
-import { ref } from "vue";
-import { useAuth } from "../composables/useAuth";
+import { ref, computed } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { useAuthStore } from "../stores/auth";
 
-const { login, loading, error } = useAuth();
+const auth = useAuthStore();
+const router = useRouter();
+const route = useRoute();
 
 const email = ref("");
 const password = ref("");
 
 const handleLogin = async () => {
-  await login(email.value, password.value);
+  await auth.login(email.value, password.value);
+  if (!auth.error) {
+    const redirect = (route.query.redirect as string) || "/users";
+    router.push(redirect);
+  }
 };
+
+const loading = computed(() => auth.loading);
+const error = computed(() => auth.error as any);
 </script>
 
 <template>
@@ -18,10 +28,7 @@ const handleLogin = async () => {
       <h1>Вход в систему</h1>
 
       <div v-if="error" class="error-message">
-        <p>
-          Ошибка авторизации:
-          {{ error.response?.data?.detail || error.message }}
-        </p>
+        <p>Ошибка авторизации: {{ error.response?.data?.detail || error.message }}</p>
       </div>
 
       <form @submit.prevent="handleLogin">
