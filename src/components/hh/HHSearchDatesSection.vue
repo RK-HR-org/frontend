@@ -13,17 +13,17 @@ const props = defineProps<{
     <div class="grid three">
       <TextInputField
         v-model="props.form.period"
-        label="period (days)"
+        label="Период (дней)"
         type="number"
       />
       <TextInputField
         v-model="props.form.dateFrom"
-        label="date_from"
+        label="Дата от"
         placeholder="YYYY-MM-DD"
       />
       <TextInputField
         v-model="props.form.dateTo"
-        label="date_to"
+        label="Дата до"
         placeholder="YYYY-MM-DD"
       />
     </div>

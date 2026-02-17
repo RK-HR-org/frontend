@@ -51,10 +51,11 @@ export const useStatics = () => {
   };
 
   /** Все справочники одним запросом. */
-  const getStaticDictionaries = async (): Promise<StaticDictionariesResponse> => {
-    const response = await api.get("/v1/static");
-    return response.data as StaticDictionariesResponse;
-  };
+  const getStaticDictionaries =
+    async (): Promise<StaticDictionariesResponse> => {
+      const response = await api.get("/v1/static");
+      return response.data as StaticDictionariesResponse;
+    };
 
   /** Регионы (areas). */
   const getAreas = async (): Promise<unknown[]> => {
@@ -111,8 +112,80 @@ export const useStatics = () => {
   };
 
   /** Подсказки: навыки по тексту. */
-  const suggestSkills = async (text: string): Promise<StaticSuggestResponse> => {
+  const suggestSkills = async (
+    text: string,
+  ): Promise<StaticSuggestResponse> => {
     const response = await api.get("/v1/static/suggest/skills", {
+      params: { text },
+    });
+    return response.data as StaticSuggestResponse;
+  };
+
+  /** Подсказки: ключевые слова поиска резюме. */
+  const suggestResumeSearchKeyword = async (
+    text: string,
+  ): Promise<StaticSuggestResponse> => {
+    const response = await api.get("/v1/static/suggest/resume-search-keyword", {
+      params: { text },
+    });
+    return response.data as StaticSuggestResponse;
+  };
+
+  /** Подсказки: ключевые слова поиска вакансий. */
+  const suggestVacancySearchKeyword = async (
+    text: string,
+  ): Promise<StaticSuggestResponse> => {
+    const response = await api.get("/v1/static/suggest/vacancy-search-keyword", {
+      params: { text },
+    });
+    return response.data as StaticSuggestResponse;
+  };
+
+  /** Подсказки: должности для поиска вакансий. */
+  const suggestVacancyPositions = async (
+    text: string,
+  ): Promise<StaticSuggestResponse> => {
+    const response = await api.get("/v1/static/suggest/vacancy-positions", {
+      params: { text },
+    });
+    return response.data as StaticSuggestResponse;
+  };
+
+  /** Подсказки: учебные заведения. */
+  const suggestEducationalInstitutions = async (
+    text: string,
+  ): Promise<StaticSuggestResponse> => {
+    const response = await api.get("/v1/static/suggest/educational-institutions", {
+      params: { text },
+    });
+    return response.data as StaticSuggestResponse;
+  };
+
+  /** Подсказки: направления обучения. */
+  const suggestFieldsOfStudy = async (
+    text: string,
+  ): Promise<StaticSuggestResponse> => {
+    const response = await api.get("/v1/static/suggest/fields-of-study", {
+      params: { text },
+    });
+    return response.data as StaticSuggestResponse;
+  };
+
+  /** Подсказки: компании. */
+  const suggestCompanies = async (
+    text: string,
+  ): Promise<StaticSuggestResponse> => {
+    const response = await api.get("/v1/static/suggest/companies", {
+      params: { text },
+    });
+    return response.data as StaticSuggestResponse;
+  };
+
+  /** Подсказки: дочерние регионы. */
+  const suggestAreaLeaves = async (
+    text: string,
+  ): Promise<StaticSuggestResponse> => {
+    const response = await api.get("/v1/static/suggest/area-leaves", {
       params: { text },
     });
     return response.data as StaticSuggestResponse;
@@ -136,5 +209,12 @@ export const useStatics = () => {
     suggestAreas,
     suggestPositions,
     suggestSkills,
+    suggestResumeSearchKeyword,
+    suggestVacancySearchKeyword,
+    suggestVacancyPositions,
+    suggestEducationalInstitutions,
+    suggestFieldsOfStudy,
+    suggestCompanies,
+    suggestAreaLeaves,
   };
 };

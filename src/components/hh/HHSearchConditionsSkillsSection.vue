@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import TextInputField from "../ui/fields/text/TextInputField.vue";
 import MultiSelectField from "../ui/fields/select/MultiSelectField.vue";
+import { EMPLOYMENT, SCHEDULE } from "../../constants/hhDictionaries";
 
 const props = withDefaults(
   defineProps<{
@@ -28,6 +29,20 @@ const emit = defineEmits<{
   addSkill: [opt: { value: string; label: string }];
 }>();
 
+const employment = computed({
+  get: () => (props.form.employment as string[]) ?? [],
+  set: (v: string[]) => {
+    props.form.employment = v;
+  },
+});
+
+const schedule = computed({
+  get: () => (props.form.schedule as string[]) ?? [],
+  set: (v: string[]) => {
+    props.form.schedule = v;
+  },
+});
+
 const skills = computed({
   get: () => (props.form.skills as string[]) ?? [],
   set: (v: string[]) => {
@@ -48,20 +63,22 @@ const languages = computed({
     <h2>Условия работы и навыки</h2>
     <div class="grid three">
       <div :class="{ 'field-cozy-highlight': cozyFilledKeys?.includes('employment') }" class="cond-cell">
-        <TextInputField
-          v-model="props.form.employment"
-          label="employment[]"
-          placeholder="значения через запятую"
+        <MultiSelectField
+          v-model="employment"
+          :options="EMPLOYMENT"
+          label="Тип занятости"
+          placeholder="Выберите тип"
         />
         <span v-if="cozyFilledKeys?.includes('employment')" class="cozy-icon" aria-hidden="true">
           <img src="/cozy.svg" alt="" />
         </span>
       </div>
       <div :class="{ 'field-cozy-highlight': cozyFilledKeys?.includes('schedule') }" class="cond-cell">
-        <TextInputField
-          v-model="props.form.schedule"
-          label="schedule[]"
-          placeholder="значения через запятую"
+        <MultiSelectField
+          v-model="schedule"
+          :options="SCHEDULE"
+          label="График работы"
+          placeholder="Выберите график"
         />
         <span v-if="cozyFilledKeys?.includes('schedule')" class="cozy-icon" aria-hidden="true">
           <img src="/cozy.svg" alt="" />
@@ -124,8 +141,8 @@ const languages = computed({
       />
       <TextInputField
         v-model="props.form.driverLicenseTypes"
-        label="driver_license_types[]"
-        placeholder="A,B,C..."
+        label="Категории прав"
+        placeholder="A, B, C..."
       />
       <div></div>
     </div>

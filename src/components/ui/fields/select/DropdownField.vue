@@ -101,4 +101,23 @@ function onChange(event) {
   -webkit-appearance: none;
   appearance: none;
 }
+
+/* Тёмный фон выпадающего списка, чтобы варианты были видны дополни так чтоб работало на всех браузерах*/
+.field-select option {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  
+  background-color: #2a2a2e;
+  color: #e4e4e7;
+}
 </style>

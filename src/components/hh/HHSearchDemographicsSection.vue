@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import TextInputField from "../ui/fields/text/TextInputField.vue";
 import RangeFromToField from "../ui/fields/range/RangeFromToField.vue";
+import DropdownField from "../ui/fields/select/DropdownField.vue";
+import { GENDER } from "../../constants/hhDictionaries";
 
 const props = defineProps<{
   form: Record<string, unknown>;
@@ -19,16 +21,21 @@ const ageFromCozy = () =>
         <RangeFromToField
           v-model:from="props.form.ageFrom"
           v-model:to="props.form.ageTo"
-          label="age_from / age_to"
+          label="Возраст (от – до)"
         />
         <span v-if="ageFromCozy()" class="cozy-icon" aria-hidden="true">
           <img src="/cozy.svg" alt="" />
         </span>
       </div>
-      <TextInputField v-model="props.form.gender" label="gender" />
+      <DropdownField
+        v-model="props.form.gender"
+        :options="GENDER"
+        label="Пол"
+        placeholder="Выберите пол"
+      />
       <TextInputField
         v-model="props.form.labels"
-        label="label[]"
+        label="Метки"
         placeholder="через запятую"
       />
     </div>
@@ -42,4 +49,3 @@ const ageFromCozy = () =>
   gap: 6px;
 }
 </style>
-

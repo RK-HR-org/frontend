@@ -3,6 +3,7 @@ import { computed } from "vue";
 import TextInputField from "../ui/fields/text/TextInputField.vue";
 import MultiSelectField from "../ui/fields/select/MultiSelectField.vue";
 import CheckboxField from "../ui/fields/boolean/CheckboxField.vue";
+import { JOB_SEARCH_STATUSES_APPLICANT } from "../../constants/hhDictionaries";
 
 const props = withDefaults(
   defineProps<{
@@ -16,6 +17,13 @@ const professionalRole = computed({
   get: () => (props.form.professionalRole as string[]) ?? [],
   set: (v: string[]) => {
     props.form.professionalRole = v;
+  },
+});
+
+const jobSearchStatus = computed({
+  get: () => (props.form.jobSearchStatus as string[]) ?? [],
+  set: (v: string[]) => {
+    props.form.jobSearchStatus = v;
   },
 });
 </script>
@@ -34,17 +42,18 @@ const professionalRole = computed({
       <TextInputField
         v-else
         v-model="props.form.professionalRole"
-        label="professional_role[]"
+        label="Профессиональные роли"
         placeholder="ID ролей через запятую"
       />
-      <TextInputField
-        v-model="props.form.jobSearchStatus"
-        label="job_search_status[]"
-        placeholder="значения через запятую"
+      <MultiSelectField
+        v-model="jobSearchStatus"
+        :options="JOB_SEARCH_STATUSES_APPLICANT"
+        label="Статус поиска работы"
+        placeholder="Выберите статусы"
       />
       <CheckboxField
         v-model="props.form.withJobSearchStatus"
-        label="with_job_search_status"
+        label="Учитывать статус поиска"
         name="with_job_search_status"
       />
     </div>

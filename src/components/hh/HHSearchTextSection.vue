@@ -77,19 +77,19 @@ function removeTextQuery(idx: number) {
           />
           <DropdownField
             v-model="props.form.textQueries[idx].logic"
-            label="text.logic"
+            label="Логика"
             :options="logicOptions"
             placeholder="Логика"
           />
           <DropdownField
             v-model="props.form.textQueries[idx].field"
-            label="text.field"
+            label="Поле поиска"
             :options="fieldOptions"
             placeholder="Поле"
           />
           <DropdownField
             v-model="props.form.textQueries[idx].period"
-            label="text.period"
+            label="Период"
             :options="periodOptions"
             placeholder="Период"
           />
@@ -117,18 +117,18 @@ function removeTextQuery(idx: number) {
     <div class="grid three">
       <TextInputField
         :model-value="(props.form.textCompanySize ?? '')"
-        label="text.company_size"
+        label="Размер компании"
         placeholder="any / small / medium / large"
         @update:model-value="(v) => (props.form.textCompanySize = v)"
       />
       <TextInputField
         :model-value="(props.form.textIndustry ?? '')"
-        label="text.industry (deprecated)"
+        label="Отрасль"
         @update:model-value="(v) => (props.form.textIndustry = v)"
       />
       <CheckboxField
         v-model="props.form.byTextPrefix"
-        label="by_text_prefix"
+        label="По префиксу текста"
         name="by_text_prefix"
       />
     </div>
