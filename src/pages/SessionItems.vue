@@ -102,6 +102,25 @@ function goBack() {
   router.push({ name: "HHSearch" }).catch(() => {});
 }
 
+/** Краткая выжимка из payload (резюме: title, area; вакансия: name, employer, area). */
+function itemPayloadSummary(item: SearchItemResponse): { titleOrName: string; area: string; extra: string } {
+  const p = item.payload;
+  if (!p || typeof p !== "object") return { titleOrName: "—", area: "—", extra: "—" };
+  const o = p as Record<string, unknown>;
+  const titleOrName =
+    (typeof o.title === "string" ? o.title : null) ?? (typeof o.name === "string" ? o.name : null) ?? "—";
+  const areaObj = o.area as { name?: string } | undefined;
+  const area = typeof areaObj?.name === "string" ? areaObj.name : "—";
+  const employer = (o.employer as { name?: string } | undefined)?.name;
+  const salary = o.salary as { from?: number; to?: number; currency?: string } | undefined;
+  const salaryStr =
+    salary != null && (salary.from != null || salary.to != null)
+      ? [salary.from, salary.to].filter((x) => x != null).join(" – ") + (salary.currency ? ` ${salary.currency}` : "")
+      : null;
+  const extra = typeof employer === "string" ? employer : salaryStr ?? "—";
+  return { titleOrName, area, extra };
+}
+
 watch([sessionId, offset, includeHidden], () => {
   fetchItems();
 }, { immediate: true });
@@ -145,6 +164,8 @@ onMounted(() => {
               <thead>
                 <tr>
                   <th>HH ID</th>
+                  <th>Название</th>
+                  <th>Регион</th>
                   <th>Избранное</th>
                   <th>Скрыт</th>
                   <th>Действия</th>
@@ -161,6 +182,8 @@ onMounted(() => {
                       {{ item.hh_id }}
                     </button>
                   </td>
+                  <td class="item-title-cell">{{ itemPayloadSummary(item).titleOrName }}</td>
+                  <td>{{ itemPayloadSummary(item).area }}</td>
                   <td>{{ item.is_favorite ? "Да" : "Нет" }}</td>
                   <td>{{ item.is_hidden ? "Да" : "Нет" }}</td>
                   <td class="actions-cell">
@@ -222,6 +245,22 @@ onMounted(() => {
           </div>
           <div v-if="detailLoading" class="loading-state">Загрузка…</div>
           <div v-else-if="detailItem" class="detail-body">
+            <div v-if="detailItem.payload && typeof detailItem.payload === 'object'" class="detail-summary">
+              <dl class="detail-dl">
+                <template v-if="itemPayloadSummary(detailItem).titleOrName !== '—'">
+                  <dt>Название</dt>
+                  <dd>{{ itemPayloadSummary(detailItem).titleOrName }}</dd>
+                </template>
+                <template v-if="itemPayloadSummary(detailItem).area !== '—'">
+                  <dt>Регион</dt>
+                  <dd>{{ itemPayloadSummary(detailItem).area }}</dd>
+                </template>
+                <template v-if="itemPayloadSummary(detailItem).extra !== '—'">
+                  <dt>Работодатель / Зарплата</dt>
+                  <dd>{{ itemPayloadSummary(detailItem).extra }}</dd>
+                </template>
+              </dl>
+            </div>
             <dl class="detail-dl">
               <dt>ID</dt>
               <dd>{{ detailItem.id }}</dd>
@@ -285,6 +324,17 @@ onMounted(() => {
 }
 .items-table th {
   font-weight: 600;
+}
+.item-title-cell {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-summary {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 .link-btn {
   background: none;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, computed, ref, onMounted } from "vue";
+import { reactive, computed, ref, onMounted, watch } from "vue";
 import HHSearchPromptsSection from "../components/hh/HHSearchPromptsSection.vue";
 import HHSearchTextSection from "../components/hh/HHSearchTextSection.vue";
 import HHSearchDemographicsSection from "../components/hh/HHSearchDemographicsSection.vue";
@@ -18,10 +18,12 @@ import { useSearchSessions } from "../composables/useSearchSessions";
 import { useQuota } from "../composables/useQuota";
 import { useStatics } from "../composables/useStatics";
 import type {
+  AdvancedSearchFiltersDTO,
   SearchEnrichResponse,
   TextQueryItem,
   RemainingQuotaResponse,
   EnrichedDataDTO,
+  LanguageDTO,
   TextQueryField,
   TextQueryLogic,
   TextQueryPeriod,
@@ -72,7 +74,6 @@ const searchForm = reactive({
 
   // Образование и опыт
   educationLevels: [] as string[],
-  educationLevelDeprecated: "" as MaybeString,
   experience: [] as string[],
   educationalInstitution: [] as string[],
   filterExpIndustry: [] as string[],
@@ -130,17 +131,17 @@ const {
   error: sessionError,
 } = useSearchSessions();
 
-const { remaining, getRemaining, loading: quotaLoading } = useQuota();
+const { remaining, getRemaining, loading: quotaLoading, error: quotaError } = useQuota();
 
 const {
   getAreas,
   getProfessionalRoles,
-  getSkills,
   getIndustries,
   getLanguages,
   suggestAreas,
   suggestPositions,
   suggestSkills,
+  suggestEducationalInstitutions,
 } = useStatics();
 
 /** Опции для селектов (значение/подпись). */
@@ -148,7 +149,7 @@ function normOpt(item: unknown): { value: string; label: string } {
   if (item == null) return { value: "", label: "" };
   const o = item as Record<string, unknown>;
   const val = o.id ?? o.value ?? "";
-  const label = (o.name ?? o.label ?? String(val)) as string;
+  const label = (o.name ?? o.label ?? o.text ?? String(val)) as string;
   return { value: String(val), label };
 }
 
@@ -164,8 +165,14 @@ const suggestAreasLoading = ref(false);
 const suggestSkillsQuery = ref("");
 const suggestSkillsResults = ref<{ value: string; label: string }[]>([]);
 const suggestSkillsLoading = ref(false);
+const suggestEduQuery = ref("");
+const suggestEduResults = ref<{ value: string; label: string }[]>([]);
+const suggestEduLoading = ref(false);
 
 const selectedTeamId = ref<string>("");
+watch(selectedTeamId, (id) => {
+  if (id) getRemaining(id);
+}, { immediate: true });
 const searchMode = ref<"resumes" | "vacancies">("resumes");
 const enrichResult = ref<SearchEnrichResponse | null>(null);
 const executeResult = ref<Awaited<ReturnType<typeof executeSession>> | null>(
@@ -186,26 +193,59 @@ const VALID_LOGIC: TextQueryLogic[] = ["all", "any", "phrase"];
 const VALID_PERIOD: TextQueryPeriod[] = [
   "all_time", "last_year", "last_three_years", "last_six_years",
 ];
+/** Поля «должность/опыт»: при наличии таких text_queries добавляем условие по title (желаемая должность). */
+const EXPERIENCE_POSITION_FIELDS = new Set<TextQueryField>([
+  "experience_position",
+  "experience",
+  "experience_company",
+  "experience_description",
+]);
 
 function applyEnrichedToForm(enriched: EnrichedDataDTO) {
   cozyFilledFields.value = new Set();
 
   if (enriched.keywords_include?.length) {
-    const text = enriched.keywords_include.join(", ");
-    searchForm.positivePrompt = searchForm.positivePrompt
-      ? `${searchForm.positivePrompt}\n${text}`
-      : text;
+    searchForm.positivePrompt = enriched.keywords_include.join(", ");
     cozyFilledFields.value.add("positivePrompt");
   }
   if (enriched.keywords_exclude?.length) {
-    const text = enriched.keywords_exclude.join(", ");
-    searchForm.negativePrompt = searchForm.negativePrompt
-      ? `${searchForm.negativePrompt}\n${text}`
-      : text;
+    searchForm.negativePrompt = enriched.keywords_exclude.join(", ");
     cozyFilledFields.value.add("negativePrompt");
   }
 
-  if (enriched.text_search?.query) {
+  if (enriched.text_queries?.length) {
+    const mapped: TextQueryItem[] = enriched.text_queries.map((tq) => {
+      const field = (VALID_FIELDS.includes((tq.field ?? "everywhere") as TextQueryField)
+        ? (tq.field ?? "everywhere")
+        : "everywhere") as TextQueryField;
+      const logic = (VALID_LOGIC.includes((tq.logic ?? "all") as TextQueryLogic)
+        ? (tq.logic ?? "all")
+        : "all") as TextQueryLogic;
+      const period = (VALID_PERIOD.includes((tq.period ?? "all_time") as TextQueryPeriod)
+        ? (tq.period ?? "all_time")
+        : "all_time") as TextQueryPeriod;
+      return {
+        text: tq.text ?? "",
+        logic,
+        field,
+        period,
+      };
+    });
+    const positionQueries = mapped.filter(
+      (q) => (q.text ?? "").trim() !== "" && EXPERIENCE_POSITION_FIELDS.has(q.field)
+    );
+    const uniquePositionTexts = [...new Set(positionQueries.map((q) => q.text.trim()))];
+    if (uniquePositionTexts.length > 0) {
+      mapped.push({
+        field: "title",
+        logic: "any",
+        text: uniquePositionTexts.join(" "),
+        period: "all_time",
+      });
+    }
+    searchForm.textQueries = mapped.length > 0 ? mapped : [defaultTextQueryItem()];
+    cozyFilledFields.value.add("textQueries");
+  } else if (enriched.text_search?.query) {
     const ts = enriched.text_search;
     const fieldVal = ts.field?.[0];
     const field = (VALID_FIELDS.includes(fieldVal as TextQueryField)
@@ -285,6 +325,12 @@ function applyEnrichedToForm(enriched: EnrichedDataDTO) {
       cozyFilledFields.value.add("currency");
     }
   }
+  if (enriched.languages?.length) {
+    searchForm.languages = enriched.languages.map((l) =>
+      l.level ? `${l.id}.${l.level}` : l.id
+    );
+    cozyFilledFields.value.add("languages");
+  }
 }
 
 async function loadDictionaries() {
@@ -297,16 +343,15 @@ async function loadDictionaries() {
       return [];
     }
   };
-  const [areas, roles, skills, industries, languages] = await Promise.all([
+  const [areas, roles, industries, languages] = await Promise.all([
     loadOne(getAreas),
     loadOne(getProfessionalRoles),
-    loadOne(getSkills),
     loadOne(getIndustries),
     loadOne(getLanguages),
   ]);
   areasOptions.value = (areas as unknown[]).map(normOpt).filter((o) => o.value !== "");
   professionalRolesOptions.value = (roles as unknown[]).map(normOpt).filter((o) => o.value !== "");
-  skillsOptions.value = (skills as unknown[]).map(normOpt).filter((o) => o.value !== "");
+  skillsOptions.value = []; // не загружаем: GET /v1/static/skills даёт 502, навыки — через suggest
   industriesOptions.value = (industries as unknown[]).map(normOpt).filter((o) => o.value !== "");
   languagesOptions.value = (languages as unknown[]).map(normOpt).filter((o) => o.value !== "");
 }
@@ -380,10 +425,177 @@ function addSkillFromSuggest(opt: { value: string; label: string }) {
   }
 }
 
+let suggestEduTimer: ReturnType<typeof setTimeout> | null = null;
+async function fetchSuggestEdu() {
+  const q = suggestEduQuery.value.trim();
+  if (q.length < 2) {
+    suggestEduResults.value = [];
+    return;
+  }
+  suggestEduLoading.value = true;
+  try {
+    const data = await suggestEducationalInstitutions(q);
+    suggestEduResults.value = normalizeSuggestResponse(data);
+  } catch {
+    suggestEduResults.value = [];
+  } finally {
+    suggestEduLoading.value = false;
+  }
+}
+
+function onSuggestEduInput() {
+  if (suggestEduTimer) clearTimeout(suggestEduTimer);
+  suggestEduTimer = setTimeout(fetchSuggestEdu, 300);
+}
+
+function addEduFromSuggest(opt: { value: string; label: string }) {
+  const arr = searchForm.educationalInstitution as string[];
+  if (!arr.includes(opt.value)) {
+    searchForm.educationalInstitution = [...arr, opt.value];
+  }
+}
+
 onMounted(() => {
   fetchTeams();
   loadDictionaries();
 });
+
+/** Преобразует значение формы (строка с запятыми или массив) в number[]. */
+function toIntArray(val: unknown): number[] {
+  if (Array.isArray(val)) {
+    return val.map((x) => parseInt(String(x), 10)).filter((n) => !Number.isNaN(n));
+  }
+  if (typeof val === "string" && val.trim()) {
+    return val
+      .split(",")
+      .map((x) => parseInt(x.trim(), 10))
+      .filter((n) => !Number.isNaN(n));
+  }
+  return [];
+}
+
+/** Преобразует значение формы в number[] ТОЛЬКО если элементы выглядят как числовые ID. */
+function toIntArrayOnlyNumericIds(val: unknown): number[] {
+  if (Array.isArray(val)) {
+    const asStrings = val.map((x) => String(x).trim());
+    if (!asStrings.length) return [];
+    // Разрешаем только элементы, которые являются строками из цифр (ID из справочников HH).
+    if (!asStrings.every((s) => /^\d+$/.test(s))) return [];
+    return asStrings.map((s) => parseInt(s, 10));
+  }
+  if (typeof val === "string" && val.trim()) {
+    const parts = val
+      .split(",")
+      .map((x) => x.trim())
+      .filter((x) => x.length > 0);
+    if (!parts.length) return [];
+    if (!parts.every((s) => /^\d+$/.test(s))) return [];
+    return parts.map((s) => parseInt(s, 10));
+  }
+  return [];
+}
+
+/** Преобразует languages формы (строки "id.level") в LanguageDTO[]. */
+function toLanguageDTOList(val: unknown): LanguageDTO[] {
+  if (!Array.isArray(val)) return [];
+  return val
+    .map((s) => {
+      const str = String(s).trim();
+      if (!str) return null;
+      const dot = str.indexOf(".");
+      if (dot >= 0) {
+        return { id: str.slice(0, dot), level: str.slice(dot + 1) || undefined };
+      }
+      return { id: str };
+    })
+    .filter((l): l is LanguageDTO => l != null && !!l.id);
+}
+
+function buildFilters(): AdvancedSearchFiltersDTO {
+  const textQueries = searchForm.textQueries
+    ?.filter((q) => (q.text ?? "").trim() !== "")
+    .map((q) => ({
+      text: q.text.trim(),
+      logic: q.logic ?? null,
+      field: q.field ?? null,
+      period: q.period ?? null,
+    }));
+  return {
+    ...(textQueries?.length ? { textQueries } : {}),
+    ...(searchForm.textCompanySize != null && searchForm.textCompanySize !== ""
+      ? { textCompanySize: searchForm.textCompanySize }
+      : {}),
+    ...(searchForm.textIndustry != null && searchForm.textIndustry !== ""
+      ? { textIndustry: searchForm.textIndustry }
+      : {}),
+    byTextPrefix: searchForm.byTextPrefix || undefined,
+    ageFrom: searchForm.ageFrom ?? undefined,
+    ageTo: searchForm.ageTo ?? undefined,
+    gender: searchForm.gender ?? undefined,
+    ...(searchForm.labels?.length ? { labels: searchForm.labels } : {}),
+    areas: toIntArray(searchForm.areas).length ? toIntArray(searchForm.areas) : undefined,
+    relocation: searchForm.relocation ?? undefined,
+    metro: toIntArray(searchForm.metro).length ? toIntArray(searchForm.metro) : undefined,
+    district: searchForm.district ?? undefined,
+    citizenship: toIntArray(searchForm.citizenship).length
+      ? toIntArray(searchForm.citizenship)
+      : undefined,
+    workTicket: toIntArray(searchForm.workTicket).length
+      ? toIntArray(searchForm.workTicket)
+      : undefined,
+    ...(searchForm.businessTripReadiness?.length
+      ? { businessTripReadiness: searchForm.businessTripReadiness }
+      : {}),
+    period: searchForm.period ?? undefined,
+    dateFrom: searchForm.dateFrom ?? undefined,
+    dateTo: searchForm.dateTo ?? undefined,
+    ...(searchForm.educationLevels?.length
+      ? { educationLevels: searchForm.educationLevels }
+      : {}),
+    educationalInstitution: toIntArray(searchForm.educationalInstitution).length
+      ? toIntArray(searchForm.educationalInstitution)
+      : undefined,
+    ...(searchForm.experience?.length ? { experience: searchForm.experience } : {}),
+    filterExpIndustry: toIntArray(searchForm.filterExpIndustry).length
+      ? toIntArray(searchForm.filterExpIndustry)
+      : undefined,
+    filterExpPeriod: searchForm.filterExpPeriod ?? undefined,
+    ...(searchForm.employment?.length ? { employment: searchForm.employment } : {}),
+    ...(searchForm.schedule?.length ? { schedule: searchForm.schedule } : {}),
+    skills:
+      toIntArrayOnlyNumericIds(searchForm.skills).length > 0
+        ? toIntArrayOnlyNumericIds(searchForm.skills)
+        : undefined,
+    languages:
+      toLanguageDTOList(searchForm.languages).length > 0
+        ? toLanguageDTOList(searchForm.languages)
+        : undefined,
+    ...(searchForm.driverLicenseTypes?.length
+      ? { driverLicenseTypes: searchForm.driverLicenseTypes }
+      : {}),
+    currency: searchForm.currency ?? undefined,
+    salaryFrom: searchForm.salaryFrom ?? undefined,
+    salaryTo: searchForm.salaryTo ?? undefined,
+    professionalRole:
+      toIntArrayOnlyNumericIds(searchForm.professionalRole).length > 0
+        ? toIntArrayOnlyNumericIds(searchForm.professionalRole)
+        : undefined,
+    ...(searchForm.jobSearchStatus?.length
+      ? { jobSearchStatus: searchForm.jobSearchStatus }
+      : {}),
+    withJobSearchStatus: searchForm.withJobSearchStatus || undefined,
+    vacancyId: searchForm.vacancyId ?? undefined,
+    resumeSimilar: searchForm.resumeSimilar ?? undefined,
+    searchInResponses: searchForm.searchInResponses || undefined,
+    searchByVacancyId: searchForm.searchByVacancyId ?? undefined,
+    ...(searchForm.folders?.length ? { folders: searchForm.folders } : {}),
+    includeAllFolders: searchForm.includeAllFolders || undefined,
+    savedSearchId: searchForm.savedSearchId ?? undefined,
+    orderBy: searchForm.orderBy ?? undefined,
+    page: searchForm.page ?? undefined,
+    perPage: searchForm.perPage ?? undefined,
+  };
+}
 
 function buildQueryRaw(): Record<string, unknown> {
   const positive = searchForm.positivePrompt?.trim() || "";
@@ -424,11 +636,19 @@ async function createSessionWithEnrich() {
   enrichResult.value = null;
   executeResult.value = null;
   try {
+    const filters = buildFilters();
+    const hasFilters = Object.values(filters).some(
+      (v) =>
+        v !== undefined &&
+        v !== null &&
+        (typeof v !== "object" || !Array.isArray(v) || (v as unknown[]).length > 0)
+    );
     const payload: import("../types").SearchCreateRequest = {
       team_id: selectedTeamId.value,
       mode: searchMode.value,
-      searchType: "simple",
-      query_raw: buildQueryRaw(),
+      searchType: hasFilters ? "advanced" : "simple",
+      queryRaw: buildQueryRaw(),
+      filters: hasFilters ? filters : null,
       ...(prompts ? { prompts } : {}),
     };
     const data = await createSession(payload);
@@ -456,7 +676,12 @@ async function createSessionWithEnrich() {
 async function confirmApprove() {
   if (!enrichResult.value?.session_id) return;
   try {
-    await approveSession(enrichResult.value.session_id);
+    const filters = buildFilters();
+    const hh_request =
+      Object.keys(filters).length > 0 ? (filters as Record<string, unknown>) : undefined;
+    await approveSession(enrichResult.value.session_id, {
+      ...(hh_request ? { hh_request } : {}),
+    });
     enrichResult.value = {
       ...enrichResult.value,
       enriched_filters: enrichResult.value.enriched_filters,
@@ -474,9 +699,39 @@ async function confirmExecute() {
       page: searchForm.page ?? 0,
     });
     executeResult.value = result;
+    if (selectedTeamId.value) getRemaining(selectedTeamId.value);
   } catch {
     // error in sessionError
   }
+}
+
+async function goToExecutePage(page: number) {
+  if (!enrichResult.value?.session_id || !executeResult.value) return;
+  if (page < 0 || page >= executeResult.value.pages) return;
+  try {
+    const result = await executeSession(enrichResult.value.session_id, { page });
+    executeResult.value = result;
+    if (selectedTeamId.value) getRemaining(selectedTeamId.value);
+  } catch {
+    // error in sessionError
+  }
+}
+
+function formatSalary(salary: { from?: number | null; to?: number | null; currency?: string | null } | null | undefined): string {
+  if (!salary) return "—";
+  const parts: string[] = [];
+  if (salary.from != null || salary.to != null) {
+    if (salary.from != null && salary.to != null) parts.push(`${salary.from} – ${salary.to}`);
+    else if (salary.from != null) parts.push(String(salary.from));
+    else if (salary.to != null) parts.push(String(salary.to));
+  }
+  if (salary.currency) parts.push(salary.currency);
+  return parts.length ? parts.join(" ") : "—";
+}
+
+function getItemArea(item: import("../types").HHExecuteItem): string {
+  const area = (item as { area?: { name?: string | null } | null }).area;
+  return area?.name ?? "—";
 }
 
 function exportJson() {
@@ -494,7 +749,7 @@ function exportJson() {
 <template>
   <div class="page-container hhsearch-page">
     <header class="page-header">
-      <h1>Поиск резюме (HH)</h1>
+      <h1>{{ searchMode === 'vacancies' ? 'Поиск вакансий (HH)' : 'Поиск резюме (HH)' }}</h1>
       <button type="button" class="btn primary" @click="exportJson">
         Экспорт JSON
       </button>
@@ -534,6 +789,33 @@ function exportJson() {
           </div>
         </div>
       </div>
+
+      <div v-if="selectedTeamId" class="quota-block field-wrapper">
+        <span class="field-label">Квота запросов API HH</span>
+        <div v-if="quotaLoading" class="hint">Загрузка квоты…</div>
+        <p v-else-if="quotaError" class="hint warning">
+          {{ quotaError instanceof Error ? quotaError.message : String(quotaError) }}
+        </p>
+        <template v-else-if="quotaInfo">
+          <template v-if="!quotaInfo.has_limits">
+            <span class="hint">Лимиты квот для команды не заданы.</span>
+          </template>
+          <template v-else>
+            <div class="quota-stats">
+              <span v-if="quotaInfo.hour">
+                За час: использовано {{ quotaInfo.hour.used }} из {{ quotaInfo.hour.limit }} (осталось {{ quotaInfo.hour.remaining }}).
+              </span>
+              <span v-if="quotaInfo.day">
+                За день: использовано {{ quotaInfo.day.used }} из {{ quotaInfo.day.limit }} (осталось {{ quotaInfo.day.remaining }}).
+              </span>
+            </div>
+            <p v-if="!quotaInfo.can_make_request" class="hint warning">
+              Недостаточно квоты для выполнения поиска. Обратитесь к администратору команды.
+            </p>
+          </template>
+        </template>
+      </div>
+      <p v-else class="hint">Выберите команду для отображения квоты.</p>
 
       <HHSearchPromptsSection :form="searchForm" :cozy-filled-keys="cozyFilledFieldsList" />
       <p v-if="sessionError" class="hint warning">
@@ -581,8 +863,74 @@ function exportJson() {
           >
             Смотреть элементы сессии
           </router-link>
+          <span v-if="enrichResult?.session_id" class="execute-summary-hint">
+            Сохранённые элементы сессии (избранное, скрытие).
+          </span>
         </div>
       </template>
+    </section>
+
+    <section v-if="executeResult" class="form-section results-section">
+      <h2 class="results-heading">Результаты поиска</h2>
+      <div v-if="executeResult.items.length === 0" class="results-empty">
+        Нет результатов на этой странице.
+      </div>
+      <ul v-else class="results-list">
+        <li
+          v-for="(item, idx) in executeResult.items"
+          :key="(item as { id?: string | number }).id ?? idx"
+          class="result-card"
+        >
+          <template v-if="searchMode === 'resumes'">
+            <div class="result-card-title">{{ (item as { title?: string }).title ?? "—" }}</div>
+            <div class="result-card-meta">
+              Возраст: {{ (item as { age?: number }).age ?? "—" }} · {{ getItemArea(item) }}
+            </div>
+            <div class="result-card-salary">
+              {{ formatSalary((item as { salary?: { from?: number; to?: number; currency?: string } }).salary) }}
+            </div>
+          </template>
+          <template v-else>
+            <div class="result-card-title">{{ (item as { name?: string }).name ?? "—" }}</div>
+            <div class="result-card-meta">
+              {{ (item as { employer?: { name?: string } }).employer?.name ?? "—" }} · {{ getItemArea(item) }}
+            </div>
+            <div class="result-card-salary">
+              {{ formatSalary((item as { salary?: { from?: number; to?: number; currency?: string } }).salary) }}
+            </div>
+          </template>
+          <a
+            v-if="(item as { alternate_url?: string }).alternate_url"
+            :href="(item as { alternate_url: string }).alternate_url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="result-card-link"
+          >
+            Открыть на HH
+          </a>
+        </li>
+      </ul>
+      <div v-if="executeResult.pages > 1" class="results-pagination">
+        <button
+          type="button"
+          class="btn small"
+          :disabled="executeResult.page <= 0"
+          @click="goToExecutePage(executeResult.page - 1)"
+        >
+          Назад
+        </button>
+        <span class="results-page-num">
+          Страница {{ executeResult.page + 1 }} из {{ executeResult.pages }}
+        </span>
+        <button
+          type="button"
+          class="btn small"
+          :disabled="executeResult.page >= executeResult.pages - 1"
+          @click="goToExecutePage(executeResult.page + 1)"
+        >
+          Вперёд
+        </button>
+      </div>
     </section>
 
     <HHSearchTextSection :form="searchForm" :cozy-filled-keys="cozyFilledFieldsList" />
@@ -598,7 +946,16 @@ function exportJson() {
       @add-area="addAreaFromSuggest"
     />
     <HHSearchDatesSection :form="searchForm" :has-conflict="!!periodDateConflict" />
-    <HHSearchEducationExperienceSection :form="searchForm" :cozy-filled-keys="cozyFilledFieldsList" />
+    <HHSearchEducationExperienceSection
+      :form="searchForm"
+      :cozy-filled-keys="cozyFilledFieldsList"
+      :suggest-edu-query="suggestEduQuery"
+      :suggest-edu-results="suggestEduResults"
+      :suggest-edu-loading="suggestEduLoading"
+      @update:suggest-edu-query="suggestEduQuery = $event"
+      @suggest-edu-input="onSuggestEduInput"
+      @add-edu="addEduFromSuggest"
+    />
     <HHSearchConditionsSkillsSection
       v-model:suggest-skills-query="suggestSkillsQuery"
       :form="searchForm"
@@ -713,6 +1070,15 @@ function exportJson() {
   margin: 0;
 }
 
+.quota-block {
+  margin: 0;
+}
+.quota-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .checkbox-group {
   display: flex;
   gap: 1rem;
@@ -739,6 +1105,65 @@ function exportJson() {
 }
 .link-session-items:hover {
   color: #8b92ff;
+}
+.execute-summary-hint {
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+.results-section {
+  margin-top: 0.5rem;
+}
+.results-heading {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.results-empty {
+  padding: 1rem;
+  text-align: center;
+  opacity: 0.9;
+}
+.results-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.result-card {
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.result-card-title {
+  font-weight: 600;
+  font-size: 1rem;
+}
+.result-card-meta,
+.result-card-salary {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+.result-card-link {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+}
+.results-pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+.results-page-num {
+  font-size: 0.95rem;
+  opacity: 0.9;
 }
 
 /* Подсветка полей, заполненных из Cozy */

@@ -228,11 +228,74 @@ export interface TextQueryItem {
   period: TextQueryPeriod;
 }
 
+/** Язык с уровнем (API: LanguageDTO). */
+export interface LanguageDTO {
+  id: string;
+  level?: string | null;
+}
+
+/** Текстовый запрос для API (TextQueryDTO). */
+export interface TextQueryDTO {
+  text: string;
+  logic?: TextQueryLogic | null;
+  field?: TextQueryField | null;
+  period?: TextQueryPeriod | null;
+}
+
+/** Расширенные фильтры поиска (AdvancedSearchFiltersDTO, OpenAPI). */
+export interface AdvancedSearchFiltersDTO {
+  textQueries?: TextQueryDTO[] | null;
+  textCompanySize?: string | null;
+  textIndustry?: string | null;
+  byTextPrefix?: boolean | null;
+  ageFrom?: number | null;
+  ageTo?: number | null;
+  gender?: string | null;
+  labels?: string[] | null;
+  areas?: number[] | null;
+  relocation?: string | null;
+  metro?: number[] | null;
+  district?: string | null;
+  citizenship?: number[] | null;
+  workTicket?: number[] | null;
+  businessTripReadiness?: string[] | null;
+  period?: number | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  educationLevels?: string[] | null;
+  educationalInstitution?: number[] | null;
+  experience?: string[] | null;
+  filterExpIndustry?: number[] | null;
+  filterExpPeriod?: string | null;
+  employment?: string[] | null;
+  schedule?: string[] | null;
+  skills?: number[] | null;
+  languages?: LanguageDTO[] | null;
+  driverLicenseTypes?: string[] | null;
+  currency?: string | null;
+  salaryFrom?: number | null;
+  salaryTo?: number | null;
+  professionalRole?: number[] | null;
+  jobSearchStatus?: string[] | null;
+  withJobSearchStatus?: boolean | null;
+  vacancyId?: string | null;
+  resumeSimilar?: string | null;
+  searchInResponses?: boolean | null;
+  searchByVacancyId?: string | null;
+  folders?: string[] | null;
+  includeAllFolders?: boolean | null;
+  savedSearchId?: string | null;
+  orderBy?: string | null;
+  page?: number | null;
+  perPage?: number | null;
+}
+
 /** Обогащённые данные от Coze для поиска HH. */
 export interface EnrichedDataDTO {
   keywords_include?: string[];
   keywords_exclude?: string[];
   text_search?: TextSearchDTO | null;
+  text_queries?: TextQueryDTO[] | null;
   skills?: string[];
   experience?: ExperienceDTO | null;
   age?: AgeDTO | null;
@@ -240,6 +303,8 @@ export interface EnrichedDataDTO {
   schedule?: string[] | null;
   employment?: string[] | null;
   salary?: SalaryDTO | null;
+  /** Языки (если бэкенд возвращает в формате LanguageDTO[]). */
+  languages?: LanguageDTO[] | null;
 }
 
 /** Изменения после обогащения. */
@@ -249,14 +314,14 @@ export interface DiffDTO {
   warnings?: string[];
 }
 
-/** Тело запроса создания сессии поиска (OpenAPI: queryRaw, searchType; бэкенд принимает query_raw). */
+/** Тело запроса создания сессии поиска (OpenAPI: queryRaw, searchType, filters). При отправке использовать queryRaw (camelCase). */
 export interface SearchCreateRequest {
   team_id: string;
   mode: SearchMode;
   searchType?: "simple" | "advanced" | null;
   query_raw?: Record<string, unknown> | null;
   queryRaw?: Record<string, unknown> | null;
-  filters?: unknown;
+  filters?: AdvancedSearchFiltersDTO | null;
   prompts?: PromptsDTO | null;
 }
 
@@ -319,11 +384,48 @@ export interface SearchResultResponse {
   fetched_at: string;
 }
 
+/** Минимальная структура элемента из ответа HH (общие поля). */
+export interface HHExecuteItemBase {
+  id?: string | number;
+  alternate_url?: string | null;
+}
+
+/** Зарплата в ответе HH. */
+export interface HHSalary {
+  from?: number | null;
+  to?: number | null;
+  currency?: string | null;
+}
+
+/** Регион в ответе HH. */
+export interface HHArea {
+  name?: string | null;
+}
+
+/** Элемент резюме из результата execute (ответ HH). */
+export interface HHResumeExecuteItem extends HHExecuteItemBase {
+  title?: string | null;
+  age?: number | null;
+  area?: HHArea | null;
+  salary?: HHSalary | null;
+}
+
+/** Элемент вакансии из результата execute (ответ HH). */
+export interface HHVacancyExecuteItem extends HHExecuteItemBase {
+  name?: string | null;
+  employer?: { name?: string | null } | null;
+  area?: HHArea | null;
+  salary?: HHSalary | null;
+}
+
+/** Элемент результата execute — резюме или вакансия. */
+export type HHExecuteItem = HHResumeExecuteItem | HHVacancyExecuteItem;
+
 /** Ответ API: выполнение поиска. */
 export interface SearchExecuteResponse {
   session: SearchSessionResponse;
   result: SearchResultResponse;
-  items: unknown[];
+  items: HHExecuteItem[];
   found: number;
   pages: number;
   per_page: number;

@@ -14,25 +14,25 @@ const props = defineProps<{
     <div class="grid three">
       <TextInputField
         v-model="props.form.folders"
-        label="folder[]"
+        label="Папки (ID)"
         placeholder="ID папок через запятую"
       />
       <CheckboxField
         v-model="props.form.includeAllFolders"
-        label="include_all_folders"
+        label="Включить все папки"
         name="include_all_folders"
       />
       <TextInputField
         v-model="props.form.savedSearchId"
-        label="saved_search_id"
+        label="ID сохранённого поиска"
       />
     </div>
     <div class="grid three">
       <TextInputField
         v-model="props.form.lastUsedTimestamp"
-        label="last_used_timestamp"
+        label="Время последнего использования"
       />
-      <TextInputField v-model="props.form.lastUsed" label="last_used" />
+      <TextInputField v-model="props.form.lastUsed" label="Последнее использование" />
       <div></div>
     </div>
     <p v-if="props.hasConflict" class="hint warning">
