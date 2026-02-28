@@ -1,7 +1,7 @@
 import axios from "axios";
 import router from "../router";
 
-const API_URL = "http://188.225.44.245:8080";
+const API_URL = "https://188.225.44.245:8080";
 export { API_URL };
 
 const api = axios.create({ baseURL: API_URL });
