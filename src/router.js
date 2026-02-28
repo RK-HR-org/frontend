@@ -10,6 +10,7 @@ import UserDetail from "./pages/UserDetail.vue";
 import Forbidden from "./pages/Forbidden.vue";
 import HHSearch from "./pages/HHSearch.vue";
 import SessionItems from "./pages/SessionItems.vue";
+import SessionList from "./pages/SessionList.vue";
 import HHCallback from "./pages/HHCallback.vue";
 import { useAuthStore } from "./stores/auth";
 
@@ -70,6 +71,12 @@ const routes = [
     path: "/hh-search",
     name: "HHSearch",
     component: HHSearch,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/search/sessions",
+    name: "SessionList",
+    component: SessionList,
     meta: { requiresAuth: true },
   },
   {

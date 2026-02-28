@@ -144,7 +144,23 @@ export const useSearchSessions = () => {
         `/v1/search/sessions/${sessionId}/execute`,
         payload ?? {},
       );
-      return response.data;
+      const data = response.data as SearchExecuteResponse & {
+        result?: { hh_response_json?: Record<string, unknown> };
+      };
+      const hhJson = data.result?.hh_response_json;
+      if (!Array.isArray(data.items) && hhJson && Array.isArray(hhJson.items)) {
+        (data as SearchExecuteResponse).items = hhJson.items as SearchExecuteResponse["items"];
+        if (data.found == null && typeof hhJson.found === "number") {
+          (data as SearchExecuteResponse).found = hhJson.found;
+        }
+        if (data.pages == null && typeof hhJson.pages === "number") {
+          (data as SearchExecuteResponse).pages = hhJson.pages;
+        }
+        if (data.page == null && typeof hhJson.page === "number") {
+          (data as SearchExecuteResponse).page = hhJson.page;
+        }
+      }
+      return data as SearchExecuteResponse;
     } catch (err) {
       error.value = err;
       throw err;
@@ -188,10 +204,14 @@ export const useSearchSessions = () => {
 
   const getSessionItem = async (
     sessionId: string,
-    itemId: string
+    itemId: string,
+    options?: { silent?: boolean }
   ): Promise<SearchItemDetailResponse> => {
+    const silent = options?.silent === true;
     try {
-      loading.value = true;
+      if (!silent) {
+        loading.value = true;
+      }
       error.value = null;
       const response = await api.get(
         `/v1/search/sessions/${sessionId}/items/${itemId}`
@@ -201,7 +221,9 @@ export const useSearchSessions = () => {
       error.value = err;
       throw err;
     } finally {
-      loading.value = false;
+      if (!silent) {
+        loading.value = false;
+      }
     }
   };
 

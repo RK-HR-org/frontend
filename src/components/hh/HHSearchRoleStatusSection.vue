@@ -3,15 +3,22 @@ import { computed } from "vue";
 import TextInputField from "../ui/fields/text/TextInputField.vue";
 import MultiSelectField from "../ui/fields/select/MultiSelectField.vue";
 import CheckboxField from "../ui/fields/boolean/CheckboxField.vue";
+import TagsAutocompleteField from "../ui/fields/tags/TagsAutocompleteField.vue";
 import { JOB_SEARCH_STATUSES_APPLICANT } from "../../constants/hhDictionaries";
 
 const props = withDefaults(
   defineProps<{
     form: Record<string, unknown>;
     professionalRolesOptions?: { value: string; label: string }[];
+    suggestRolesQuery?: string;
   }>(),
-  { professionalRolesOptions: () => [] }
+  { professionalRolesOptions: () => [], suggestRolesQuery: "" }
 );
+
+const emit = defineEmits<{
+  "update:suggestRolesQuery": [value: string];
+  addRole: [opt: { value: string; label: string }];
+}>();
 
 const professionalRole = computed({
   get: () => (props.form.professionalRole as string[]) ?? [],
@@ -26,25 +33,46 @@ const jobSearchStatus = computed({
     props.form.jobSearchStatus = v;
   },
 });
+
+const rolesLabelsMap = computed(() =>
+  Object.fromEntries(
+    props.professionalRolesOptions.map((o) => [o.value, o.label])
+  )
+);
+
+const suggestRolesResults = computed(() => {
+  const q = (props.suggestRolesQuery ?? "").trim().toLowerCase();
+  if (q.length < 2) return [];
+  const selected = new Set(professionalRole.value);
+  return props.professionalRolesOptions.filter(
+    (o) =>
+      o.label.toLowerCase().includes(q) && !selected.has(o.value)
+  );
+});
 </script>
 
 <template>
   <section class="form-section">
     <h2>Роль и статусы</h2>
     <div class="grid three">
-      <MultiSelectField
+      <TagsAutocompleteField
         v-if="professionalRolesOptions.length > 0"
         v-model="professionalRole"
-        :options="professionalRolesOptions"
+        :query="suggestRolesQuery"
+        :suggestions="suggestRolesResults"
+        :labels-map="rolesLabelsMap"
         label="Профессиональные роли"
-        placeholder="Выберите роли"
+        placeholder="Введите название роли (минимум 2 символа)..."
+        :min-chars="2"
+        @update:query="(v: string) => emit('update:suggestRolesQuery', v)"
+        @add="(opt) => emit('addRole', opt)"
       />
-      <TextInputField
+      <!-- <TextInputField
         v-else
         v-model="props.form.professionalRole"
         label="Профессиональные роли"
         placeholder="ID ролей через запятую"
-      />
+      /> -->
       <MultiSelectField
         v-model="jobSearchStatus"
         :options="JOB_SEARCH_STATUSES_APPLICANT"

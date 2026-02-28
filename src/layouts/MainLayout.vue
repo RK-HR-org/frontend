@@ -6,7 +6,9 @@ import AppHeader from "../components/layout/AppHeader.vue";
   <div class="app-container">
     <AppHeader />
     <div class="app-body">
-      <router-view />
+      <div class="container">
+        <router-view />
+      </div>
     </div>
   </div>
 </template>
@@ -20,7 +22,7 @@ import AppHeader from "../components/layout/AppHeader.vue";
 }
 
 .app-body {
-  padding: 10px;
+  padding: 0;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;

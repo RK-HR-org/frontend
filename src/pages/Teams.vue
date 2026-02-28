@@ -230,8 +230,6 @@ async function submitDelete() {
 <style scoped>
 .teams-page {
   padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
 }
 
 .page-header {

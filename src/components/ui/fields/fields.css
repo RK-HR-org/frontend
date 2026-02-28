@@ -71,6 +71,36 @@
   box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.2);
 }
 
+/* Теги (chips) — общие стили для multiselect с тегами */
+.field-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.field-tag-remove {
+  padding: 0 2px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  opacity: 0.8;
+}
+.field-tag-remove:hover {
+  opacity: 1;
+}
+@media (prefers-color-scheme: light) {
+  .field-tag {
+    background: rgba(0, 0, 0, 0.06);
+  }
+}
+
 @media (prefers-color-scheme: light) {
   .field-input-base {
     border-color: rgba(0, 0, 0, 0.15);

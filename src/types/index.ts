@@ -199,19 +199,21 @@ export interface TextSearchDTO {
 }
 
 /** Логика текстового условия поиска (форма). */
-export type TextQueryLogic = "all" | "any" | "phrase";
+export type TextQueryLogic = "all" | "any" | "phrase" | "except";
 
-/** Поле поиска текста (форма). */
+/** Поле поиска текста для резюме (форма). */
 export type TextQueryField =
   | "everywhere"
   | "title"
   | "education"
-  | "keywords"
   | "experience"
   | "experience_company"
   | "experience_position"
   | "experience_description"
   | "skills";
+
+/** Поле поиска текста для вакансий. */
+export type VacancySearchField = "name" | "company_name" | "description";
 
 /** Период для текстового поиска (форма). */
 export type TextQueryPeriod =
@@ -288,6 +290,10 @@ export interface AdvancedSearchFiltersDTO {
   orderBy?: string | null;
   page?: number | null;
   perPage?: number | null;
+  /** ID работодателей (для вакансий). */
+  employerIds?: string[] | null;
+  /** Области поиска для вакансий (name, company_name, description). */
+  searchField?: string[] | null;
 }
 
 /** Обогащённые данные от Coze для поиска HH. */
@@ -451,20 +457,27 @@ export interface SearchSessionWithResultsResponse {
   results: SearchResultResponse[];
 }
 
-/** Элемент поиска (резюме/вакансия) в списке. */
+/** Элемент поиска (резюме/вакансия) в списке. Данные HH API — в raw_data. */
 export interface SearchItemResponse {
   id: string;
-  result_id: string;
-  session_id: string;
   hh_id: string;
+  item_type?: "resume" | "vacancy" | null;
   is_favorite?: boolean | null;
   is_hidden?: boolean | null;
+  /** Данные от HH API (резюме/вакансия по документации hh.ru). */
+  raw_data?: Record<string, unknown> | null;
+  /** @deprecated Используйте raw_data. Оставлено для обратной совместимости. */
   payload?: Record<string, unknown> | null;
-  created_at: string;
+  /** Опционально: плоские поля, если бэкенд ещё отдаёт. */
+  result_id?: string | null;
+  session_id?: string | null;
+  title?: string | null;
 }
 
 /** Детали элемента поиска. */
 export interface SearchItemDetailResponse extends SearchItemResponse {
+  /** Полные данные резюме (платный запрос HH, кэш). */
+  full_data?: Record<string, unknown> | null;
   [key: string]: unknown;
 }
 
@@ -503,6 +516,13 @@ export interface HHTokenInfo {
   refresh_token: string;
   expires_at: string;
   token_type?: string;
+}
+
+/** Ответ GET /v1/hh/balance — баланс HH (рубли). */
+export interface HHBalanceResponse {
+  balance?: number;
+  actual?: number;
+  initial?: number;
 }
 
 // --- Квоты и лимиты ---

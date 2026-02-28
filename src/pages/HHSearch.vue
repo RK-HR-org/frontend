@@ -32,6 +32,13 @@ import type {
 type MaybeString = string | null;
 type MaybeNumber = number | null;
 
+/** Иерархическая структура отраслей: родитель + подотрасли. */
+interface IndustryGroup {
+  id: string;
+  name: string;
+  industries: { id: string; name: string }[];
+}
+
 function defaultTextQueryItem(): TextQueryItem {
   return {
     text: "",
@@ -59,6 +66,7 @@ const searchForm = reactive({
   labels: [] as string[],
 
   // География
+  country: "113" as string, // Россия по умолчанию
   areas: [] as string[],
   relocation: "" as MaybeString,
   metro: [] as string[],
@@ -127,9 +135,76 @@ const {
   createSession,
   approveSession,
   executeSession,
+  getSession,
   loading: sessionLoading,
   error: sessionError,
 } = useSearchSessions();
+
+const ACTIVE_SESSION_KEY = "hh-search-active-session";
+
+function saveActiveSession(sessionId: string, teamId: string, mode: string) {
+  try {
+    sessionStorage.setItem(
+      ACTIVE_SESSION_KEY,
+      JSON.stringify({ session_id: sessionId, team_id: teamId, mode })
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function clearActiveSession() {
+  try {
+    sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+async function restoreActiveSession() {
+  let raw: string | null = null;
+  try {
+    raw = sessionStorage.getItem(ACTIVE_SESSION_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  let data: { session_id?: string; team_id?: string; mode?: string };
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const sessionId = data?.session_id;
+  if (!sessionId || typeof sessionId !== "string") return;
+  try {
+    const session = await getSession(sessionId, true);
+    const s = session as {
+      id?: string;
+      team_id?: string;
+      mode?: string;
+      status?: string;
+      query_enriched?: Record<string, unknown> | null;
+      results?: unknown[];
+    };
+    selectedTeamId.value = s.team_id ?? data.team_id ?? "";
+    searchMode.value = (s.mode === "vacancies" ? "vacancies" : "resumes") as "resumes" | "vacancies";
+    enrichResult.value = {
+      session_id: s.id ?? sessionId,
+      enriched_filters: (s.query_enriched && typeof s.query_enriched === "object")
+        ? (s.query_enriched as EnrichedDataDTO)
+        : {},
+      diff: {},
+    };
+    if (s.status === "executed" && Array.isArray(s.results) && s.results.length > 0) {
+      const result = await executeSession(sessionId, { page: 0 });
+      executeResult.value = result;
+      if (selectedTeamId.value) getRemaining(selectedTeamId.value);
+    }
+  } catch {
+    clearActiveSession();
+  }
+}
 
 const { remaining, getRemaining, loading: quotaLoading, error: quotaError } = useQuota();
 
@@ -139,6 +214,7 @@ const {
   getIndustries,
   getLanguages,
   suggestAreas,
+  suggestAreaLeaves,
   suggestPositions,
   suggestSkills,
   suggestEducationalInstitutions,
@@ -153,27 +229,35 @@ function normOpt(item: unknown): { value: string; label: string } {
   return { value: String(val), label };
 }
 
-const areasOptions = ref<{ value: string; label: string }[]>([]);
+const countriesOptions = ref<{ value: string; label: string }[]>([]);
 const professionalRolesOptions = ref<{ value: string; label: string }[]>([]);
 const skillsOptions = ref<{ value: string; label: string }[]>([]);
-const industriesOptions = ref<{ value: string; label: string }[]>([]);
+const industriesData = ref<IndustryGroup[]>([]);
 const languagesOptions = ref<{ value: string; label: string }[]>([]);
 
-const suggestAreasQuery = ref("");
-const suggestAreasResults = ref<{ value: string; label: string }[]>([]);
-const suggestAreasLoading = ref(false);
+const suggestCitiesQuery = ref("");
+const suggestCitiesResults = ref<{ value: string; label: string }[]>([]);
+const suggestCitiesLoading = ref(false);
+const areaLabels = ref<Record<string, string>>({});
 const suggestSkillsQuery = ref("");
 const suggestSkillsResults = ref<{ value: string; label: string }[]>([]);
 const suggestSkillsLoading = ref(false);
+const skillLabels = ref<Record<string, string>>({});
 const suggestEduQuery = ref("");
 const suggestEduResults = ref<{ value: string; label: string }[]>([]);
 const suggestEduLoading = ref(false);
+const suggestRolesQuery = ref("");
 
 const selectedTeamId = ref<string>("");
 watch(selectedTeamId, (id) => {
   if (id) getRemaining(id);
 }, { immediate: true });
 const searchMode = ref<"resumes" | "vacancies">("resumes");
+const searchVariant = ref<"cozy" | "form">("form");
+watch(searchVariant, () => {
+  enrichResult.value = null;
+  executeResult.value = null;
+});
 const enrichResult = ref<SearchEnrichResponse | null>(null);
 const executeResult = ref<Awaited<ReturnType<typeof executeSession>> | null>(
   null
@@ -186,10 +270,10 @@ const quotaInfo = computed<RemainingQuotaResponse | null>(
 const cozyFilledFieldsList = computed(() => Array.from(cozyFilledFields.value));
 
 const VALID_FIELDS: TextQueryField[] = [
-  "everywhere", "title", "education", "keywords", "experience",
+  "everywhere", "title", "education", "experience",
   "experience_company", "experience_position", "experience_description", "skills",
 ];
-const VALID_LOGIC: TextQueryLogic[] = ["all", "any", "phrase"];
+const VALID_LOGIC: TextQueryLogic[] = ["all", "any", "phrase", "except"];
 const VALID_PERIOD: TextQueryPeriod[] = [
   "all_time", "last_year", "last_three_years", "last_six_years",
 ];
@@ -215,9 +299,12 @@ function applyEnrichedToForm(enriched: EnrichedDataDTO) {
 
   if (enriched.text_queries?.length) {
     const mapped: TextQueryItem[] = enriched.text_queries.map((tq) => {
-      const field = (VALID_FIELDS.includes((tq.field ?? "everywhere") as TextQueryField)
-        ? (tq.field ?? "everywhere")
-        : "everywhere") as TextQueryField;
+      const rawField = (tq.field ?? "everywhere") as string;
+      const field = (VALID_FIELDS.includes(rawField as TextQueryField)
+        ? rawField
+        : rawField === "keywords"
+          ? "skills"
+          : "everywhere") as TextQueryField;
       const logic = (VALID_LOGIC.includes((tq.logic ?? "all") as TextQueryLogic)
         ? (tq.logic ?? "all")
         : "all") as TextQueryLogic;
@@ -247,10 +334,12 @@ function applyEnrichedToForm(enriched: EnrichedDataDTO) {
     cozyFilledFields.value.add("textQueries");
   } else if (enriched.text_search?.query) {
     const ts = enriched.text_search;
-    const fieldVal = ts.field?.[0];
-    const field = (VALID_FIELDS.includes(fieldVal as TextQueryField)
+    const fieldVal = ts.field?.[0] as string | undefined;
+    const field = (VALID_FIELDS.includes((fieldVal ?? "") as TextQueryField)
       ? fieldVal
-      : "everywhere") as TextQueryField;
+      : fieldVal === "keywords"
+        ? "skills"
+        : "everywhere") as TextQueryField;
     const logic = (VALID_LOGIC.includes(ts.logic as TextQueryLogic)
       ? ts.logic
       : "all") as TextQueryLogic;
@@ -296,7 +385,11 @@ function applyEnrichedToForm(enriched: EnrichedDataDTO) {
   }
   if (enriched.location) {
     if (enriched.location.area_id != null) {
-      searchForm.areas = [String(enriched.location.area_id)];
+      const id = String(enriched.location.area_id);
+      searchForm.areas = [id];
+      if (enriched.location.area_name) {
+        areaLabels.value = { ...areaLabels.value, [id]: enriched.location.area_name };
+      }
       cozyFilledFields.value.add("areas");
     } else if (enriched.location.area_name) {
       searchForm.areas = [enriched.location.area_name];
@@ -349,10 +442,25 @@ async function loadDictionaries() {
     loadOne(getIndustries),
     loadOne(getLanguages),
   ]);
-  areasOptions.value = (areas as unknown[]).map(normOpt).filter((o) => o.value !== "");
+  // Страны: верхний уровень дерева регионов (HH API) или весь список
+  const areasArr = areas as unknown[];
+  countriesOptions.value = areasArr.map(normOpt).filter((o) => o.value !== "");
   professionalRolesOptions.value = (roles as unknown[]).map(normOpt).filter((o) => o.value !== "");
   skillsOptions.value = []; // не загружаем: GET /v1/static/skills даёт 502, навыки — через suggest
-  industriesOptions.value = (industries as unknown[]).map(normOpt).filter((o) => o.value !== "");
+  const industriesArr = industries as Array<{ id?: string; name?: string; industries?: { id?: string; name?: string }[] }>;
+  industriesData.value = Array.isArray(industriesArr)
+    ? industriesArr
+        .filter((p) => p?.id != null && p?.name != null)
+        .map((p) => ({
+          id: String(p.id),
+          name: String(p.name),
+          industries: Array.isArray(p.industries)
+            ? p.industries
+                .filter((s) => s?.id != null && s?.name != null)
+                .map((s) => ({ id: String(s.id), name: String(s.name) }))
+            : [],
+        }))
+    : [];
   languagesOptions.value = (languages as unknown[]).map(normOpt).filter((o) => o.value !== "");
 }
 
@@ -367,27 +475,28 @@ function normalizeSuggestResponse(data: unknown): { value: string; label: string
   return [];
 }
 
-let suggestAreasTimer: ReturnType<typeof setTimeout> | null = null;
-async function fetchSuggestAreas() {
-  const q = suggestAreasQuery.value.trim();
+let suggestCitiesTimer: ReturnType<typeof setTimeout> | null = null;
+async function fetchSuggestCities() {
+  const q = suggestCitiesQuery.value.trim();
   if (q.length < 2) {
-    suggestAreasResults.value = [];
+    suggestCitiesResults.value = [];
     return;
   }
-  suggestAreasLoading.value = true;
+  suggestCitiesLoading.value = true;
   try {
-    const data = await suggestAreas(q);
-    suggestAreasResults.value = normalizeSuggestResponse(data);
+    const countryId = searchForm.country || "113";
+    const data = await suggestAreaLeaves(q, countryId);
+    suggestCitiesResults.value = normalizeSuggestResponse(data);
   } catch {
-    suggestAreasResults.value = [];
+    suggestCitiesResults.value = [];
   } finally {
-    suggestAreasLoading.value = false;
+    suggestCitiesLoading.value = false;
   }
 }
 
-function onSuggestAreasInput() {
-  if (suggestAreasTimer) clearTimeout(suggestAreasTimer);
-  suggestAreasTimer = setTimeout(fetchSuggestAreas, 300);
+function onSuggestCitiesInput() {
+  if (suggestCitiesTimer) clearTimeout(suggestCitiesTimer);
+  suggestCitiesTimer = setTimeout(fetchSuggestCities, 300);
 }
 
 let suggestSkillsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -413,15 +522,23 @@ function onSuggestSkillsInput() {
   suggestSkillsTimer = setTimeout(fetchSuggestSkills, 300);
 }
 
-function addAreaFromSuggest(opt: { value: string; label: string }) {
+function addCityFromSuggest(opt: { value: string; label: string }) {
   if (!searchForm.areas.includes(opt.value)) {
     searchForm.areas = [...searchForm.areas, opt.value];
+    areaLabels.value = { ...areaLabels.value, [opt.value]: opt.label };
   }
 }
 
 function addSkillFromSuggest(opt: { value: string; label: string }) {
   if (!searchForm.skills.includes(opt.value)) {
     searchForm.skills = [...searchForm.skills, opt.value];
+    skillLabels.value = { ...skillLabels.value, [opt.value]: opt.label };
+  }
+}
+
+function addRoleFromSuggest(opt: { value: string; label: string }) {
+  if (!searchForm.professionalRole.includes(opt.value)) {
+    searchForm.professionalRole = [...searchForm.professionalRole, opt.value];
   }
 }
 
@@ -455,9 +572,10 @@ function addEduFromSuggest(opt: { value: string; label: string }) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   fetchTeams();
   loadDictionaries();
+  await restoreActiveSession();
 });
 
 /** Преобразует значение формы (строка с запятыми или массив) в number[]. */
@@ -514,12 +632,15 @@ function toLanguageDTOList(val: unknown): LanguageDTO[] {
 function buildFilters(): AdvancedSearchFiltersDTO {
   const textQueries = searchForm.textQueries
     ?.filter((q) => (q.text ?? "").trim() !== "")
-    .map((q) => ({
-      text: q.text.trim(),
-      logic: q.logic ?? null,
-      field: q.field ?? null,
-      period: q.period ?? null,
-    }));
+    .map((q) => {
+      const field = ((q.field as string) === "keywords" ? "skills" : q.field) ?? null;
+      return {
+        text: q.text.trim(),
+        logic: q.logic ?? null,
+        field,
+        period: q.period ?? null,
+      };
+    });
   return {
     ...(textQueries?.length ? { textQueries } : {}),
     ...(searchForm.textCompanySize != null && searchForm.textCompanySize !== ""
@@ -528,15 +649,21 @@ function buildFilters(): AdvancedSearchFiltersDTO {
     ...(searchForm.textIndustry != null && searchForm.textIndustry !== ""
       ? { textIndustry: searchForm.textIndustry }
       : {}),
-    byTextPrefix: searchForm.byTextPrefix || undefined,
+    ...(searchForm.byTextPrefix ? { byTextPrefix: true } : {}),
     ageFrom: searchForm.ageFrom ?? undefined,
     ageTo: searchForm.ageTo ?? undefined,
-    gender: searchForm.gender ?? undefined,
+    ...(searchForm.gender != null && searchForm.gender !== ""
+      ? { gender: searchForm.gender }
+      : {}),
     ...(searchForm.labels?.length ? { labels: searchForm.labels } : {}),
     areas: toIntArray(searchForm.areas).length ? toIntArray(searchForm.areas) : undefined,
-    relocation: searchForm.relocation ?? undefined,
+    ...(searchForm.relocation != null && searchForm.relocation !== ""
+      ? { relocation: searchForm.relocation }
+      : {}),
     metro: toIntArray(searchForm.metro).length ? toIntArray(searchForm.metro) : undefined,
-    district: searchForm.district ?? undefined,
+    ...(searchForm.district != null && searchForm.district !== ""
+      ? { district: searchForm.district }
+      : {}),
     citizenship: toIntArray(searchForm.citizenship).length
       ? toIntArray(searchForm.citizenship)
       : undefined,
@@ -547,8 +674,12 @@ function buildFilters(): AdvancedSearchFiltersDTO {
       ? { businessTripReadiness: searchForm.businessTripReadiness }
       : {}),
     period: searchForm.period ?? undefined,
-    dateFrom: searchForm.dateFrom ?? undefined,
-    dateTo: searchForm.dateTo ?? undefined,
+    ...(searchForm.dateFrom != null && searchForm.dateFrom !== ""
+      ? { dateFrom: searchForm.dateFrom }
+      : {}),
+    ...(searchForm.dateTo != null && searchForm.dateTo !== ""
+      ? { dateTo: searchForm.dateTo }
+      : {}),
     ...(searchForm.educationLevels?.length
       ? { educationLevels: searchForm.educationLevels }
       : {}),
@@ -559,7 +690,9 @@ function buildFilters(): AdvancedSearchFiltersDTO {
     filterExpIndustry: toIntArray(searchForm.filterExpIndustry).length
       ? toIntArray(searchForm.filterExpIndustry)
       : undefined,
-    filterExpPeriod: searchForm.filterExpPeriod ?? undefined,
+    ...(searchForm.filterExpPeriod != null && searchForm.filterExpPeriod !== ""
+      ? { filterExpPeriod: searchForm.filterExpPeriod }
+      : {}),
     ...(searchForm.employment?.length ? { employment: searchForm.employment } : {}),
     ...(searchForm.schedule?.length ? { schedule: searchForm.schedule } : {}),
     skills:
@@ -584,14 +717,24 @@ function buildFilters(): AdvancedSearchFiltersDTO {
       ? { jobSearchStatus: searchForm.jobSearchStatus }
       : {}),
     withJobSearchStatus: searchForm.withJobSearchStatus || undefined,
-    vacancyId: searchForm.vacancyId ?? undefined,
-    resumeSimilar: searchForm.resumeSimilar ?? undefined,
+    ...(searchForm.vacancyId != null && searchForm.vacancyId !== ""
+      ? { vacancyId: searchForm.vacancyId }
+      : {}),
+    ...(searchForm.resumeSimilar != null && searchForm.resumeSimilar !== ""
+      ? { resumeSimilar: searchForm.resumeSimilar }
+      : {}),
     searchInResponses: searchForm.searchInResponses || undefined,
-    searchByVacancyId: searchForm.searchByVacancyId ?? undefined,
+    ...(searchForm.searchByVacancyId != null && searchForm.searchByVacancyId !== ""
+      ? { searchByVacancyId: searchForm.searchByVacancyId }
+      : {}),
     ...(searchForm.folders?.length ? { folders: searchForm.folders } : {}),
     includeAllFolders: searchForm.includeAllFolders || undefined,
-    savedSearchId: searchForm.savedSearchId ?? undefined,
-    orderBy: searchForm.orderBy ?? undefined,
+    ...(searchForm.savedSearchId != null && searchForm.savedSearchId !== ""
+      ? { savedSearchId: searchForm.savedSearchId }
+      : {}),
+    ...(searchForm.orderBy != null && searchForm.orderBy !== ""
+      ? { orderBy: searchForm.orderBy }
+      : {}),
     page: searchForm.page ?? undefined,
     perPage: searchForm.perPage ?? undefined,
   };
@@ -633,6 +776,7 @@ async function createSessionWithEnrich() {
     );
     return;
   }
+  clearActiveSession();
   enrichResult.value = null;
   executeResult.value = null;
   try {
@@ -659,6 +803,7 @@ async function createSessionWithEnrich() {
         enriched_filters: (data as SearchEnrichResponse).enriched_filters ?? {},
         diff: (data as SearchEnrichResponse).diff ?? {},
       };
+      saveActiveSession(sessionId, selectedTeamId.value, searchMode.value);
       const filters = (data as SearchEnrichResponse).enriched_filters;
       if (filters && typeof filters === "object") {
         try {
@@ -667,6 +812,59 @@ async function createSessionWithEnrich() {
           // не ломаем показ результата при неожиданной структуре enriched_filters
         }
       }
+    }
+  } catch {
+    // error already in sessionError
+  }
+}
+
+function hasAnyFilters(filters: AdvancedSearchFiltersDTO): boolean {
+  return Object.values(filters).some(
+    (v) =>
+      v !== undefined &&
+      v !== null &&
+      (typeof v !== "object" || !Array.isArray(v) || (v as unknown[]).length > 0)
+  );
+}
+
+async function createSessionDirect() {
+  sessionError.value = null;
+  if (!selectedTeamId.value) {
+    sessionError.value = new Error("Выберите команду");
+    return;
+  }
+  const filters = buildFilters();
+  if (!hasAnyFilters(filters)) {
+    sessionError.value = new Error("Заполните хотя бы одно поле формы");
+    return;
+  }
+  await getRemaining(selectedTeamId.value);
+  if (quotaInfo.value && !quotaInfo.value.can_make_request) {
+    sessionError.value = new Error(
+      "Недостаточно квоты для выполнения поиска. Обратитесь к администратору команды."
+    );
+    return;
+  }
+  clearActiveSession();
+  enrichResult.value = null;
+  executeResult.value = null;
+  try {
+    const payload: import("../types").SearchCreateRequest = {
+      team_id: selectedTeamId.value,
+      mode: searchMode.value,
+      searchType: "advanced",
+      queryRaw: { query: "" },
+      filters,
+    };
+    const data = await createSession(payload);
+    const sessionId = (data as { session_id?: string; id?: string }).session_id ?? (data as { id?: string }).id;
+    if (sessionId) {
+      enrichResult.value = {
+        session_id: sessionId,
+        enriched_filters: {},
+        diff: {},
+      };
+      saveActiveSession(sessionId, selectedTeamId.value, searchMode.value);
     }
   } catch {
     // error already in sessionError
@@ -717,10 +915,14 @@ async function goToExecutePage(page: number) {
   }
 }
 
-function formatSalary(salary: { from?: number | null; to?: number | null; currency?: string | null } | null | undefined): string {
+function formatSalary(
+  salary: { amount?: number | null; from?: number | null; to?: number | null; currency?: string | null } | null | undefined
+): string {
   if (!salary) return "—";
   const parts: string[] = [];
-  if (salary.from != null || salary.to != null) {
+  if (typeof (salary as { amount?: number }).amount === "number") {
+    parts.push(String((salary as { amount: number }).amount));
+  } else if (salary.from != null || salary.to != null) {
     if (salary.from != null && salary.to != null) parts.push(`${salary.from} – ${salary.to}`);
     else if (salary.from != null) parts.push(String(salary.from));
     else if (salary.to != null) parts.push(String(salary.to));
@@ -734,8 +936,36 @@ function getItemArea(item: import("../types").HHExecuteItem): string {
   return area?.name ?? "—";
 }
 
+function getResumeExperienceMeta(item: { experience?: Array<{ position?: string; company?: string }> }): string {
+  const exp = item.experience;
+  if (!Array.isArray(exp) || exp.length === 0) return "";
+  const first = exp[0];
+  const pos = first?.position;
+  const company = first?.company;
+  if (pos && company) return `${pos} в ${company}`;
+  return pos ?? company ?? "";
+}
+
 function exportJson() {
-  const dataStr = JSON.stringify(searchForm, null, 2);
+  // Экспортируем тот же payload, который уходит в createSessionWithEnrich,
+  // чтобы структура совпадала с SearchCreateRequest и примером hh-search-params.
+  const filters = buildFilters();
+  const hasFilters = Object.values(filters).some(
+    (v) =>
+      v !== undefined &&
+      v !== null &&
+      (typeof v !== "object" || !Array.isArray(v) || (v as unknown[]).length > 0),
+  );
+  const prompts = getPrompts();
+  const payload: import("../types").SearchCreateRequest = {
+    team_id: selectedTeamId.value || "",
+    mode: searchMode.value,
+    searchType: hasFilters ? "advanced" : "simple",
+    queryRaw: buildQueryRaw(),
+    filters: hasFilters ? filters : null,
+    ...(prompts ? { prompts } : {}),
+  };
+  const dataStr = JSON.stringify(payload, null, 2);
   const blob = new Blob([dataStr], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -750,9 +980,14 @@ function exportJson() {
   <div class="page-container hhsearch-page">
     <header class="page-header">
       <h1>{{ searchMode === 'vacancies' ? 'Поиск вакансий (HH)' : 'Поиск резюме (HH)' }}</h1>
-      <button type="button" class="btn primary" @click="exportJson">
-        Экспорт JSON
-      </button>
+      <div class="header-actions">
+        <router-link :to="{ name: 'SessionList' }" class="btn secondary">
+          Поисковые сессии
+        </router-link>
+        <button type="button" class="btn primary" @click="exportJson">
+          Экспорт JSON
+        </button>
+      </div>
     </header>
 
     <section class="form-section">
@@ -788,6 +1023,19 @@ function exportJson() {
             </label>
           </div>
         </div>
+        <div class="field-wrapper">
+          <span class="field-label">Вариант поиска</span>
+          <div class="checkbox-group">
+            <label class="checkbox">
+              <input v-model="searchVariant" type="radio" value="cozy" />
+              С промптом AI
+            </label>
+            <label class="checkbox">
+              <input v-model="searchVariant" type="radio" value="form" />
+              По заполненной форме
+            </label>
+          </div>
+        </div>
       </div>
 
       <div v-if="selectedTeamId" class="quota-block field-wrapper">
@@ -817,11 +1065,16 @@ function exportJson() {
       </div>
       <p v-else class="hint">Выберите команду для отображения квоты.</p>
 
-      <HHSearchPromptsSection :form="searchForm" :cozy-filled-keys="cozyFilledFieldsList" />
+      <HHSearchPromptsSection
+        v-if="searchVariant === 'cozy'"
+        :form="searchForm"
+        :cozy-filled-keys="cozyFilledFieldsList"
+      />
       <p v-if="sessionError" class="hint warning">
         {{ sessionError instanceof Error ? sessionError.message : String(sessionError) }}
       </p>
       <button
+        v-if="searchVariant === 'cozy'"
         type="button"
         class="btn primary"
         :disabled="sessionLoading || !selectedTeamId"
@@ -829,9 +1082,19 @@ function exportJson() {
       >
         {{ sessionLoading ? "Отправка…" : "Отправить в Cozy AI и заполнить форму" }}
       </button>
+      <button
+        v-if="searchVariant === 'form'"
+        type="button"
+        class="btn primary"
+        :disabled="sessionLoading || !selectedTeamId"
+        @click="createSessionDirect"
+      >
+        {{ sessionLoading ? "Создание…" : "Создать сессию поиска" }}
+      </button>
 
       <template v-if="enrichResult">
         <HHSearchEnrichedResult
+          v-if="searchVariant === 'cozy'"
           :enriched-filters="enrichResult.enriched_filters"
           :diff="enrichResult.diff"
           :session-id="enrichResult.session_id"
@@ -843,7 +1106,7 @@ function exportJson() {
             :disabled="sessionLoading"
             @click="confirmApprove"
           >
-            Подтвердить сессию
+            {{ searchVariant === 'cozy' ? 'Подтвердить сессию' : 'Подтвердить' }}
           </button>
           <button
             type="button"
@@ -851,7 +1114,7 @@ function exportJson() {
             :disabled="sessionLoading"
             @click="confirmExecute"
           >
-            Выполнить поиск
+            {{ searchVariant === 'cozy' ? 'Выполнить поиск' : 'Реализовать запрос к HH' }}
           </button>
         </div>
         <div v-if="executeResult" class="execute-summary">
@@ -884,10 +1147,14 @@ function exportJson() {
           <template v-if="searchMode === 'resumes'">
             <div class="result-card-title">{{ (item as { title?: string }).title ?? "—" }}</div>
             <div class="result-card-meta">
-              Возраст: {{ (item as { age?: number }).age ?? "—" }} · {{ getItemArea(item) }}
+              {{ [
+                "Возраст: " + ((item as { age?: number }).age ?? "—"),
+                getItemArea(item),
+                getResumeExperienceMeta(item as { experience?: Array<{ position?: string; company?: string }> })
+              ].filter(Boolean).join(" · ") }}
             </div>
             <div class="result-card-salary">
-              {{ formatSalary((item as { salary?: { from?: number; to?: number; currency?: string } }).salary) }}
+              {{ formatSalary((item as { salary?: { amount?: number; from?: number; to?: number; currency?: string } }).salary) }}
             </div>
           </template>
           <template v-else>
@@ -933,17 +1200,22 @@ function exportJson() {
       </div>
     </section>
 
-    <HHSearchTextSection :form="searchForm" :cozy-filled-keys="cozyFilledFieldsList" />
-    <HHSearchDemographicsSection :form="searchForm" :cozy-filled-keys="cozyFilledFieldsList" />
-    <HHSearchGeoSection
-      v-model:suggest-areas-query="suggestAreasQuery"
+    <HHSearchTextSection
       :form="searchForm"
       :cozy-filled-keys="cozyFilledFieldsList"
-      :areas-options="areasOptions"
-      :suggest-areas-results="suggestAreasResults"
-      :suggest-areas-loading="suggestAreasLoading"
-      @suggest-areas-input="onSuggestAreasInput"
-      @add-area="addAreaFromSuggest"
+      :industries-data="industriesData"
+    />
+    <HHSearchDemographicsSection :form="searchForm" :cozy-filled-keys="cozyFilledFieldsList" />
+    <HHSearchGeoSection
+      v-model:suggest-cities-query="suggestCitiesQuery"
+      :form="searchForm"
+      :cozy-filled-keys="cozyFilledFieldsList"
+      :countries-options="countriesOptions"
+      :suggest-cities-results="suggestCitiesResults"
+      :suggest-cities-loading="suggestCitiesLoading"
+      :area-labels="areaLabels"
+      @suggest-cities-input="onSuggestCitiesInput"
+      @add-city="addCityFromSuggest"
     />
     <HHSearchDatesSection :form="searchForm" :has-conflict="!!periodDateConflict" />
     <HHSearchEducationExperienceSection
@@ -964,6 +1236,7 @@ function exportJson() {
       :languages-options="languagesOptions"
       :suggest-skills-results="suggestSkillsResults"
       :suggest-skills-loading="suggestSkillsLoading"
+      :skill-labels="skillLabels"
       @suggest-skills-input="onSuggestSkillsInput"
       @add-skill="addSkillFromSuggest"
     />
@@ -971,10 +1244,12 @@ function exportJson() {
     <HHSearchRoleStatusSection
       :form="searchForm"
       :professional-roles-options="professionalRolesOptions"
+      v-model:suggest-roles-query="suggestRolesQuery"
+      @add-role="addRoleFromSuggest"
     />
-    <HHSearchSimilarSection :form="searchForm" />
+    <!-- <HHSearchSimilarSection :form="searchForm" />
     <HHSearchFoldersSection :form="searchForm" :has-conflict="!!folderConflict" />
-    <HHSearchSortingSection :form="searchForm" />
+    <HHSearchSortingSection :form="searchForm" /> -->
   </div>
 </template>
 
@@ -993,10 +1268,23 @@ function exportJson() {
   align-items: center;
   gap: 12px;
 }
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
 
 .form-section {
   padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(255, 255, 255);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
   display: flex;
@@ -1184,7 +1472,7 @@ function exportJson() {
   flex-shrink: 0;
   width: 20px;
   height: 20px;
-  color: #3b82f6;
+  color: #5af63b;
   margin-top: 0.5rem;
 }
 .field-cozy-highlight .cozy-icon img {

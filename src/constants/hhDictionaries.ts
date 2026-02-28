@@ -79,3 +79,68 @@ export const CURRENCY_OPTIONS: Option[] = [
   { value: "KGS", label: "Киргизский сом" },
   { value: "UZS", label: "Узбекский сум" },
 ];
+
+/** Метки поиска резюме (resume_search_label). */
+export const RESUME_SEARCH_LABEL: Option[] = [
+  { value: "only_with_photo", label: "Только с фотографией" },
+  { value: "only_with_salary", label: "Не показывать резюме без зарплаты" },
+  {
+    value: "only_with_age",
+    label: "Не показывать резюме без указания возраста",
+  },
+  {
+    value: "only_with_gender",
+    label: "Не показывать резюме без указания пола",
+  },
+  { value: "only_with_vehicle", label: "Есть личный автомобиль" },
+  {
+    value: "exclude_viewed_by_user_id",
+    label: "Скрыть резюме, просмотренные мной",
+  },
+  {
+    value: "exclude_viewed_by_employer_id",
+    label: "Скрыть резюме, просмотренные всей компанией",
+  },
+  {
+    value: "only_in_responses",
+    label: "Показать только из откликов и приглашений",
+  },
+];
+
+/** Готовность к переезду (resume_search_relocation). */
+export const RESUME_SEARCH_RELOCATION: Option[] = [
+  {
+    value: "living_or_relocation",
+    label: "Живут в указанном регионе или готовы переехать в него",
+  },
+  { value: "living", label: "Живут в указанном регионе" },
+  {
+    value: "living_but_relocation",
+    label: "Живут в указанном регионе и готовы к переезду куда-либо",
+  },
+  {
+    value: "relocation",
+    label: "Не живут в указанном регионе, но готовы переехать в него",
+  },
+];
+
+/** Готовность к командировкам (business_trip_readiness). */
+export const BUSINESS_TRIP_READINESS: Option[] = [
+  { value: "ready", label: "Готов к командировкам" },
+  { value: "sometimes", label: "Готов к редким командировкам" },
+  { value: "never", label: "Не готов к командировкам" },
+];
+
+/** Категории водительских прав (driver_license_types). */
+export const DRIVER_LICENSE_TYPES: Option[] = [
+  { value: "A", label: "A" },
+  { value: "B", label: "B" },
+  { value: "C", label: "C" },
+  { value: "D", label: "D" },
+  { value: "E", label: "E" },
+  { value: "BE", label: "BE" },
+  { value: "CE", label: "CE" },
+  { value: "DE", label: "DE" },
+  { value: "TM", label: "TM" },
+  { value: "TB", label: "TB" },
+];

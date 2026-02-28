@@ -69,6 +69,7 @@ function onChange(event) {
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
 }
 
 .checkbox-row {

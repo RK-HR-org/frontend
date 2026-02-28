@@ -63,10 +63,27 @@ export const useStatics = () => {
     return Array.isArray(response.data) ? response.data : [];
   };
 
-  /** Профессиональные роли. */
+  /** Профессиональные роли. Бэкенд/HH возвращают каталог { categories: [{ roles: [...] }] }, приводим к плоскому массиву без дублей (роль может входить в несколько категорий). */
   const getProfessionalRoles = async (): Promise<unknown[]> => {
     const response = await api.get("/v1/static/professional-roles");
-    return Array.isArray(response.data) ? response.data : [];
+    const data = response.data;
+    if (Array.isArray(data)) return data;
+    const catalog = data as { categories?: { roles?: { id?: string }[] }[] };
+    if (Array.isArray(catalog?.categories)) {
+      const seen = new Set<string>();
+      const result: unknown[] = [];
+      for (const cat of catalog.categories) {
+        for (const role of cat.roles ?? []) {
+          const id = role?.id != null ? String(role.id) : "";
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            result.push(role);
+          }
+        }
+      }
+      return result;
+    }
+    return [];
   };
 
   /** Навыки. */
@@ -135,9 +152,12 @@ export const useStatics = () => {
   const suggestVacancySearchKeyword = async (
     text: string,
   ): Promise<StaticSuggestResponse> => {
-    const response = await api.get("/v1/static/suggest/vacancy-search-keyword", {
-      params: { text },
-    });
+    const response = await api.get(
+      "/v1/static/suggest/vacancy-search-keyword",
+      {
+        params: { text },
+      },
+    );
     return response.data as StaticSuggestResponse;
   };
 
@@ -155,9 +175,12 @@ export const useStatics = () => {
   const suggestEducationalInstitutions = async (
     text: string,
   ): Promise<StaticSuggestResponse> => {
-    const response = await api.get("/v1/static/suggest/educational-institutions", {
-      params: { text },
-    });
+    const response = await api.get(
+      "/v1/static/suggest/educational-institutions",
+      {
+        params: { text },
+      },
+    );
     return response.data as StaticSuggestResponse;
   };
 
@@ -181,12 +204,15 @@ export const useStatics = () => {
     return response.data as StaticSuggestResponse;
   };
 
-  /** Подсказки: дочерние регионы. */
+  /** Подсказки: дочерние регионы (города, населённые пункты). areaId сужает подсказки по стране. */
   const suggestAreaLeaves = async (
     text: string,
+    areaId?: string,
   ): Promise<StaticSuggestResponse> => {
+    const params: Record<string, string> = { text };
+    if (areaId) params.area_id = areaId;
     const response = await api.get("/v1/static/suggest/area-leaves", {
-      params: { text },
+      params,
     });
     return response.data as StaticSuggestResponse;
   };

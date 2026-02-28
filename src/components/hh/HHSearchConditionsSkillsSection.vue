@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import TextInputField from "../ui/fields/text/TextInputField.vue";
 import MultiSelectField from "../ui/fields/select/MultiSelectField.vue";
-import { EMPLOYMENT, SCHEDULE } from "../../constants/hhDictionaries";
+import TagsAutocompleteField from "../ui/fields/tags/TagsAutocompleteField.vue";
+import { EMPLOYMENT, SCHEDULE, DRIVER_LICENSE_TYPES } from "../../constants/hhDictionaries";
 
 const props = withDefaults(
   defineProps<{
@@ -13,6 +14,7 @@ const props = withDefaults(
     suggestSkillsQuery?: string;
     suggestSkillsResults?: { value: string; label: string }[];
     suggestSkillsLoading?: boolean;
+    skillLabels?: Record<string, string>;
   }>(),
   {
     skillsOptions: () => [],
@@ -20,6 +22,7 @@ const props = withDefaults(
     suggestSkillsQuery: "",
     suggestSkillsResults: () => [],
     suggestSkillsLoading: false,
+    skillLabels: () => ({}),
   }
 );
 
@@ -50,12 +53,79 @@ const skills = computed({
   },
 });
 
+const skillsLabelsMap = computed(() => {
+  const map: Record<string, string> = { ...(props.skillLabels ?? {}) };
+  for (const o of props.skillsOptions ?? []) {
+    if (!map[o.value]) map[o.value] = o.label;
+  }
+  for (const o of props.suggestSkillsResults ?? []) {
+    if (!map[o.value]) map[o.value] = o.label;
+  }
+  return map;
+});
+
 const languages = computed({
   get: () => (props.form.languages as string[]) ?? [],
   set: (v: string[]) => {
     props.form.languages = v;
   },
 });
+
+const driverLicenseTypes = computed({
+  get: () => (props.form.driverLicenseTypes as string[]) ?? [],
+  set: (v: string[]) => {
+    props.form.driverLicenseTypes = v;
+  },
+});
+
+const driverLicenseQuery = ref("");
+
+const driverLicenseLabelsMap = computed(() =>
+  Object.fromEntries(DRIVER_LICENSE_TYPES.map((o) => [o.value, o.label]))
+);
+
+const driverLicenseSuggestions = computed(() => {
+  const q = driverLicenseQuery.value.trim().toLowerCase();
+  if (q.length < 1) return [];
+  return DRIVER_LICENSE_TYPES.filter(
+    (o) =>
+      o.label.toLowerCase().includes(q) ||
+      o.value.toLowerCase().includes(q)
+  );
+});
+
+function addDriverLicense(opt: { value: string; label: string }) {
+  if (!driverLicenseTypes.value.includes(opt.value)) {
+    driverLicenseTypes.value = [...driverLicenseTypes.value, opt.value];
+  }
+}
+
+const suggestLanguagesQuery = ref("");
+const suggestLanguagesLoading = ref(false);
+
+const suggestLanguagesResults = computed(() => {
+  const q = suggestLanguagesQuery.value.trim().toLowerCase();
+  if (q.length < 1) return [];
+  return (props.languagesOptions ?? []).filter(
+    (o) =>
+      o.label.toLowerCase().includes(q) ||
+      o.value.toLowerCase().includes(q)
+  );
+});
+
+const languagesLabelsMap = computed(() => {
+  const map: Record<string, string> = {};
+  for (const o of props.languagesOptions ?? []) {
+    if (!map[o.value]) map[o.value] = o.label;
+  }
+  return map;
+});
+
+function addLanguage(opt: { value: string; label: string }) {
+  if (!languages.value.includes(opt.value)) {
+    languages.value = [...languages.value, opt.value];
+  }
+}
 </script>
 
 <template>
@@ -85,41 +155,18 @@ const languages = computed({
         </span>
       </div>
       <div :class="{ 'field-cozy-highlight': cozyFilledKeys?.includes('skills') }" class="cond-cell">
-        <MultiSelectField
-          v-if="skillsOptions.length > 0"
+        <TagsAutocompleteField
           v-model="skills"
-          :options="skillsOptions"
+          :query="suggestSkillsQuery ?? ''"
+          :suggestions="suggestSkillsResults ?? []"
+          :loading="suggestSkillsLoading"
+          :labels-map="skillsLabelsMap"
           label="Навыки"
-          placeholder="Выберите навыки"
+          placeholder="Введите навык (минимум 2 символа)..."
+          :min-chars="2"
+          @update:query="(v: string) => { emit('update:suggestSkillsQuery', v); emit('suggestSkillsInput'); }"
+          @add="(opt) => emit('addSkill', opt)"
         />
-        <TextInputField
-          v-else
-          v-model="props.form.skills"
-          label="skill[]"
-          placeholder="ID навыков через запятую"
-        />
-        <div class="suggest-block">
-          <input
-            :value="suggestSkillsQuery"
-            type="text"
-            class="field-input-base suggest-input"
-            placeholder="Поиск навыка (минимум 2 символа)..."
-            :disabled="suggestSkillsLoading"
-            @input="(e: Event) => { emit('update:suggestSkillsQuery', (e.target as HTMLInputElement).value); emit('suggestSkillsInput'); }"
-          />
-          <span v-if="suggestSkillsLoading" class="suggest-loading">Загрузка…</span>
-          <div v-else-if="suggestSkillsResults?.length" class="suggest-list">
-            <button
-              v-for="opt in suggestSkillsResults"
-              :key="opt.value"
-              type="button"
-              class="suggest-item"
-              @click="emit('addSkill', opt)"
-            >
-              {{ opt.label }}
-            </button>
-          </div>
-        </div>
         <span v-if="cozyFilledKeys?.includes('skills')" class="cozy-icon" aria-hidden="true">
           <img src="/cozy.svg" alt="" />
         </span>
@@ -133,16 +180,29 @@ const languages = computed({
         label="Языки"
         placeholder="Выберите языки"
       />
-      <TextInputField
+      <TagsAutocompleteField
         v-else
-        v-model="props.form.languages"
-        label="language[]"
-        placeholder="lang.level через запятую (ita.c2)"
+        v-model="languages"
+        :query="suggestLanguagesQuery ?? ''"
+        :suggestions="suggestLanguagesResults ?? []"
+        :loading="suggestLanguagesLoading"
+        :labels-map="languagesLabelsMap"
+        label="Языки"
+        placeholder="Выберите языки"
+        :min-chars="1"
+        @update:query="(v: string) => (suggestLanguagesQuery = v)"
+        @add="addLanguage"
       />
-      <TextInputField
-        v-model="props.form.driverLicenseTypes"
+      <TagsAutocompleteField
+        v-model="driverLicenseTypes"
+        :query="driverLicenseQuery"
+        :suggestions="driverLicenseSuggestions"
+        :labels-map="driverLicenseLabelsMap"
         label="Категории прав"
-        placeholder="A, B, C..."
+        placeholder="Введите категории прав..."
+        :min-chars="1"
+        @update:query="(v: string) => (driverLicenseQuery = v)"
+        @add="addDriverLicense"
       />
       <div></div>
     </div>
