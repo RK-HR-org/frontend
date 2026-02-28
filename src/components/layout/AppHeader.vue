@@ -1,16 +1,35 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { useAuthStore } from "../../stores/auth";
+import { useHHOAuth } from "../../composables/useHHOAuth";
+import { usePermissions } from "../../composables/usePermissions";
 import AppMenu from "./AppMenu.vue";
-import latLogo from "../../assets/lat-logo.svg";
 
+const latLogo = new URL("../../assets/lat-logo.svg", import.meta.url).href;
 const auth = useAuthStore();
+const { canExecuteHHSearch } = usePermissions();
+const { balance, balanceLoading, fetchBalance } = useHHOAuth();
 
 const userName = computed(() => {
   const user = auth.user;
   if (!user) return "Гость";
   const parts = [user.first_name, user.last_name].filter(Boolean).join(" ");
   return parts || user.email || "Гость";
+});
+
+const formattedBalance = computed(() => {
+  const v = balance.value;
+  if (v === null || v === undefined) return null;
+  return v.toLocaleString("ru-RU", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+});
+
+onMounted(() => {
+  if (auth.isAuthenticated && canExecuteHHSearch.value) {
+    fetchBalance();
+  }
 });
 </script>
 
@@ -26,6 +45,17 @@ const userName = computed(() => {
       </div>
     </router-link>
     <div class="header-right">
+      <span
+        v-if="
+          auth.isAuthenticated &&
+          canExecuteHHSearch &&
+          (balanceLoading || formattedBalance !== null)
+        "
+        class="hh-balance"
+      >
+        <template v-if="balanceLoading">—</template>
+        <template v-else>Токены: {{ formattedBalance }}</template>
+      </span>
       <span class="user-name">{{ userName }}</span>
       <AppMenu />
     </div>
@@ -90,6 +120,13 @@ const userName = computed(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.hh-balance {
+  font-size: 0.9rem;
+  opacity: 0.9;
+  padding-right: 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.25);
 }
 
 .user-name {

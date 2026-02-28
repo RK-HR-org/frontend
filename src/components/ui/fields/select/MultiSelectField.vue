@@ -83,7 +83,7 @@ function toggle(value) {
         :disabled="disabled"
         @click="toggle(opt.value)"
       >
-        <span class="multiselect-check">{{ selectedSet.has(opt.value) ? '✓' : '' }}</span>
+        <span v-if="selectedSet.has(opt.value)" class="multiselect-check">{{ selectedSet.has(opt.value) ? '✓' : '' }}</span>
         {{ opt.label }}
       </button>
       <span v-if="normalizedOptions.length === 0" class="multiselect-placeholder">
@@ -133,8 +133,8 @@ function toggle(value) {
 }
 
 .multiselect-option.selected {
-  border-color: #646cff;
-  background: rgba(100, 108, 255, 0.2);
+  border-color: #54e46c;
+  background: rgba(156, 216, 164, 0.2);
 }
 
 .multiselect-option:disabled {
@@ -147,8 +147,8 @@ function toggle(value) {
   justify-content: center;
   width: 1rem;
   height: 1rem;
-  font-size: 0.7rem;
-  color: #646cff;
+  font-size: 1rem;
+  color: #ffffff;
 }
 
 .multiselect-placeholder {

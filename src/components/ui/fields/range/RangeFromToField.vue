@@ -44,7 +44,7 @@ function onToInput(event: Event) {
     </label>
 
     <div class="range-from-to-row">
-      <div class="range-from-to-col">
+      <div class="range-from-to-row-item">
         <span class="field-sub-label">
           {{ fromLabel || "От" }}
         </span>
@@ -57,7 +57,7 @@ function onToInput(event: Event) {
           @input="onFromInput"
         />
       </div>
-      <div class="range-from-to-col">
+      <div class="range-from-to-row-item">
         <span class="field-sub-label">
           {{ toLabel || "До" }}
         </span>
@@ -94,6 +94,14 @@ function onToInput(event: Event) {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+.range-from-to-row-item {
+  display: flex;
+  flex-direction: row;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
 }
 
 .field-sub-label {

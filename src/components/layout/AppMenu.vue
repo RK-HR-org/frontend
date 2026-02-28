@@ -64,6 +64,14 @@ function logout() {
           Поиск кандидатов и вакансий
         </button>
         <button
+          v-if="isAuthenticated && canExecuteHHSearch"
+          type="button"
+          class="menu-item"
+          @click="goTo('/search/sessions')"
+        >
+          Поисковые сессии
+        </button>
+        <button
           v-if="isAuthenticated && canViewUsersList"
           type="button"
           class="menu-item"

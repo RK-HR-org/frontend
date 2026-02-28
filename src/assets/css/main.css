@@ -115,7 +115,7 @@ table th {
 .container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 1rem;
+  padding: 0.625rem 1rem;
 }
 
 .text-center {

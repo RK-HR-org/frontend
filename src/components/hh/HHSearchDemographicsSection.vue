@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import TextInputField from "../ui/fields/text/TextInputField.vue";
+import { computed } from "vue";
 import RangeFromToField from "../ui/fields/range/RangeFromToField.vue";
 import DropdownField from "../ui/fields/select/DropdownField.vue";
-import { GENDER } from "../../constants/hhDictionaries";
+import MultiSelectField from "../ui/fields/select/MultiSelectField.vue";
+import { GENDER, RESUME_SEARCH_LABEL } from "../../constants/hhDictionaries";
 
 const props = defineProps<{
   form: Record<string, unknown>;
@@ -11,6 +12,13 @@ const props = defineProps<{
 
 const ageFromCozy = () =>
   props.cozyFilledKeys?.includes("ageFrom") || props.cozyFilledKeys?.includes("ageTo");
+
+const labels = computed({
+  get: () => (props.form.labels as string[]) ?? [],
+  set: (v: string[]) => {
+    props.form.labels = v;
+  },
+});
 </script>
 
 <template>
@@ -33,10 +41,13 @@ const ageFromCozy = () =>
         label="Пол"
         placeholder="Выберите пол"
       />
-      <TextInputField
-        v-model="props.form.labels"
+    </div>
+    <div>
+      <MultiSelectField
+        v-model="labels"
+        :options="RESUME_SEARCH_LABEL"
         label="Метки"
-        placeholder="через запятую"
+        placeholder="Выберите метки"
       />
     </div>
   </section>
